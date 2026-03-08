@@ -1,0 +1,14 @@
+package routes
+
+import (
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+
+	authroutes "multitenancypfe/internal/auth/routes"
+	storeroutes "multitenancypfe/internal/store/routes"
+)
+
+func Register(app *fiber.App, db *gorm.DB) {
+	authroutes.RegisterAuthRoutes(app, db)
+	storeroutes.RegisterStoreRoutes(app, db)
+}
