@@ -21,6 +21,7 @@ type TenantService interface {
 	GetAll() ([]dto.TenantResponse, error)
 	Update(id uuid.UUID, req dto.UpdateTenantRequest) (*dto.TenantResponse, error)
 	Delete(id uuid.UUID) error
+	Restore(id uuid.UUID) error
 }
 
 type tenantService struct {
@@ -32,14 +33,35 @@ func NewTenantService(r repo.TenantRepository) TenantService {
 }
 
 func (s *tenantService) Create(req dto.CreateTenantRequest) (*dto.TenantResponse, error) {
-	existing, err := s.repo.FindByEmail(req.Email)
+	existing, err := s.repo.FindByEmailIncludeDeleted(req.Email)
 	if err != nil {
 		return nil, err
 	}
+
 	if existing != nil {
-		return nil, errors.New("email already in use")
+		// email existe mais compte actif
+		if existing.DeletedAt == nil {
+			return nil, errors.New("email already in use")
+		}
+		// email existe mais compte supprimé → réactiver
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, err
+		}
+		existing.PasswordHash = string(hash)
+		existing.FirstName = req.FirstName
+		existing.LastName = req.LastName
+		existing.Phone = req.Phone
+		existing.Plan = req.Plan
+		existing.Status = "pending"
+		existing.DeletedAt = nil
+		if err := s.repo.Update(existing); err != nil {
+			return nil, err
+		}
+		return toTenantResponse(existing), nil
 	}
 
+	// email n'existe pas → créer normalement
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -64,7 +86,6 @@ func (s *tenantService) Create(req dto.CreateTenantRequest) (*dto.TenantResponse
 
 	return toTenantResponse(tenant), nil
 }
-
 func (s *tenantService) GetByID(id uuid.UUID) (*dto.TenantResponse, error) {
 	tenant, err := s.findOrFail(id)
 	if err != nil {
@@ -186,4 +207,8 @@ func toTenantResponse(t *models.Tenant) *dto.TenantResponse {
 		Status:        t.Status,
 		EmailVerified: t.EmailVerified,
 	}
+}
+
+func (s *tenantService) Restore(id uuid.UUID) error {
+	return s.repo.Restore(id)
 }

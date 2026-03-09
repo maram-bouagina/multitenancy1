@@ -45,4 +45,5 @@ func registerTenantRoutes(api fiber.Router, db *gorm.DB) {
 	g.Get("/:id", h.GetByID)
 	g.Put("/:id", h.Update)
 	g.Delete("/:id", h.Delete)
+	g.Post("/:id/restore", h.Restore)
 }

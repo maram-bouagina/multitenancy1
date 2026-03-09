@@ -99,3 +99,14 @@ func (h *TenantAuthHandler) Login(c *fiber.Ctx) error {
 	}
 	return c.JSON(resp)
 }
+
+func (h *TenantHandler) Restore(c *fiber.Ctx) error {
+	id, err := helpers.ParseID(c)
+	if err != nil {
+		return err
+	}
+	if err := h.svc.Restore(id); err != nil {
+		return helpers.Fail(c, fiber.StatusNotFound, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}

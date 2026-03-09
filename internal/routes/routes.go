@@ -5,10 +5,12 @@ import (
 	"gorm.io/gorm"
 
 	authroutes "multitenancypfe/internal/auth/routes"
+	productroutes "multitenancypfe/internal/products/routes"
 	storeroutes "multitenancypfe/internal/store/routes"
 )
 
 func Register(app *fiber.App, db *gorm.DB) {
 	authroutes.RegisterAuthRoutes(app, db)
 	storeroutes.RegisterStoreRoutes(app, db)
+	productroutes.RegisterProductRoutes(app, db)
 }

@@ -16,6 +16,8 @@ type TenantRepository interface {
 	FindAll() ([]models.Tenant, error)
 	Update(tenant *models.Tenant) error
 	Delete(id uuid.UUID) error
+	Restore(id uuid.UUID) error
+	FindByEmailIncludeDeleted(email string) (*models.Tenant, error)
 }
 
 type tenantRepository struct {
@@ -62,4 +64,19 @@ func (r *tenantRepository) Delete(id uuid.UUID) error {
 	return r.db.Model(&models.Tenant{}).
 		Where("id = ?", id).
 		Update("deleted_at", gorm.Expr("NOW()")).Error
+}
+
+func (r *tenantRepository) FindByEmailIncludeDeleted(email string) (*models.Tenant, error) {
+	var tenant models.Tenant
+	err := r.db.Where("email = ?", email).First(&tenant).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &tenant, err
+}
+
+func (r *tenantRepository) Restore(id uuid.UUID) error {
+	return r.db.Model(&models.Tenant{}).
+		Where("id = ?", id).
+		Update("deleted_at", nil).Error
 }
