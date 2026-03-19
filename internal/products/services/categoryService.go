@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"multitenancypfe/internal/products/dto"
 	"multitenancypfe/internal/products/models"
@@ -12,11 +11,11 @@ import (
 )
 
 type CategoryService interface {
-	Create(storeID uuid.UUID, req dto.CreateCategoryRequest, db *gorm.DB) (*dto.CategoryResponse, error)
-	GetByID(id, storeID uuid.UUID, db *gorm.DB) (*dto.CategoryResponse, error)
-	GetTree(storeID uuid.UUID, db *gorm.DB) ([]dto.CategoryResponse, error)
-	Update(id, storeID uuid.UUID, req dto.UpdateCategoryRequest, db *gorm.DB) (*dto.CategoryResponse, error)
-	Delete(id, storeID uuid.UUID, db *gorm.DB) error
+	Create(storeID uuid.UUID, req dto.CreateCategoryRequest) (*dto.CategoryResponse, error)
+	GetByID(id, storeID uuid.UUID) (*dto.CategoryResponse, error)
+	GetTree(storeID uuid.UUID) ([]dto.CategoryResponse, error)
+	Update(id, storeID uuid.UUID, req dto.UpdateCategoryRequest) (*dto.CategoryResponse, error)
+	Delete(id, storeID uuid.UUID) error
 }
 
 type categoryService struct {
@@ -27,10 +26,10 @@ func NewCategoryService(r repo.CategoryRepository) CategoryService {
 	return &categoryService{repo: r}
 }
 
-func (s *categoryService) Create(storeID uuid.UUID, req dto.CreateCategoryRequest, db *gorm.DB) (*dto.CategoryResponse, error) {
+func (s *categoryService) Create(storeID uuid.UUID, req dto.CreateCategoryRequest) (*dto.CategoryResponse, error) {
 	slug := resolveSlug(req.Slug, req.Name)
 
-	exists, err := s.repo.SlugExists(slug, storeID, nil, db)
+	exists, err := s.repo.SlugExists(slug, storeID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -46,15 +45,17 @@ func (s *categoryService) Create(storeID uuid.UUID, req dto.CreateCategoryReques
 		Description: req.Description,
 		Visibility:  req.Visibility,
 	}
-	if err := s.repo.Create(c, db); err != nil {
+
+	if err := s.repo.Create(c); err != nil {
 		return nil, err
 	}
+
 	resp := toCategoryResponse(c)
 	return &resp, nil
 }
 
-func (s *categoryService) GetByID(id, storeID uuid.UUID, db *gorm.DB) (*dto.CategoryResponse, error) {
-	c, err := s.findOrFail(id, storeID, db)
+func (s *categoryService) GetByID(id, storeID uuid.UUID) (*dto.CategoryResponse, error) {
+	c, err := s.findOrFail(id, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,27 +63,26 @@ func (s *categoryService) GetByID(id, storeID uuid.UUID, db *gorm.DB) (*dto.Cate
 	return &resp, nil
 }
 
-// GetTree returns all root categories with nested children (arbitrary depth).
-func (s *categoryService) GetTree(storeID uuid.UUID, db *gorm.DB) ([]dto.CategoryResponse, error) {
-	roots, err := s.repo.FindRoots(storeID, db)
+func (s *categoryService) GetTree(storeID uuid.UUID) ([]dto.CategoryResponse, error) {
+	roots, err := s.repo.FindRoots(storeID)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]dto.CategoryResponse, len(roots))
 	for i, c := range roots {
-		result[i] = toCategoryResponse(&c)
+		result[i] = toCategoryResponse(c)
 	}
 	return result, nil
 }
 
-func (s *categoryService) Update(id, storeID uuid.UUID, req dto.UpdateCategoryRequest, db *gorm.DB) (*dto.CategoryResponse, error) {
-	c, err := s.findOrFail(id, storeID, db)
+func (s *categoryService) Update(id, storeID uuid.UUID, req dto.UpdateCategoryRequest) (*dto.CategoryResponse, error) {
+	c, err := s.findOrFail(id, storeID)
 	if err != nil {
 		return nil, err
 	}
 
 	if req.Slug != nil {
-		exists, err := s.repo.SlugExists(*req.Slug, storeID, &id, db)
+		exists, err := s.repo.SlugExists(*req.Slug, storeID, &id)
 		if err != nil {
 			return nil, err
 		}
@@ -105,30 +105,33 @@ func (s *categoryService) Update(id, storeID uuid.UUID, req dto.UpdateCategoryRe
 		c.Visibility = *req.Visibility
 	}
 
-	if err := s.repo.Update(c, db); err != nil {
+	if err := s.repo.Update(c); err != nil {
 		return nil, err
 	}
+
 	resp := toCategoryResponse(c)
 	return &resp, nil
 }
 
-// Delete blocks deletion if the category still has products assigned to it.
-func (s *categoryService) Delete(id, storeID uuid.UUID, db *gorm.DB) error {
-	if _, err := s.findOrFail(id, storeID, db); err != nil {
+func (s *categoryService) Delete(id, storeID uuid.UUID) error {
+	if _, err := s.findOrFail(id, storeID); err != nil {
 		return err
 	}
-	hasProducts, err := s.repo.HasProducts(id, db)
+
+	hasProducts, err := s.repo.HasProducts(id)
 	if err != nil {
 		return err
 	}
 	if hasProducts {
 		return errors.New("cannot delete category with products")
 	}
-	return s.repo.Delete(id, storeID, db)
+
+	return s.repo.Delete(id, storeID)
 }
 
-func (s *categoryService) findOrFail(id, storeID uuid.UUID, db *gorm.DB) (*models.Category, error) {
-	c, err := s.repo.FindByID(id, storeID, db)
+// (private helper)
+func (s *categoryService) findOrFail(id, storeID uuid.UUID) (*models.Category, error) {
+	c, err := s.repo.FindByID(id, storeID)
 	if err != nil {
 		return nil, err
 	}

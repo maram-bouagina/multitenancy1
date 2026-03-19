@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"multitenancypfe/internal/database"
@@ -19,17 +18,15 @@ func TenantDB() fiber.Handler {
 
 		schema := fmt.Sprintf("tenant_%s", tenantID)
 
-		sqlDB, err := database.DB.DB()
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "db error"})
-		}
+		// Get a new GORM session from the global database
+		// Each request gets its own scoped DB session
+		scopedDB := database.DB.Session(&gorm.Session{})
 
-		scopedDB, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "db scope error"})
+		// Set search_path for this connection to prioritize tenant schema
+		// Schema names with special characters must be quoted
+		if err := scopedDB.Exec(fmt.Sprintf(`SET search_path = "%s", public`, schema)).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "set search_path failed: " + err.Error()})
 		}
-
-		scopedDB = scopedDB.Exec(fmt.Sprintf("SET search_path TO %q, public", schema))
 
 		c.Locals("tenantDB", scopedDB)
 		c.Locals("tenantID", tenantID)

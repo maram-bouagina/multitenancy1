@@ -15,25 +15,35 @@ func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
 		middleware.RequireAuth(),
 		middleware.TenantDB(),
 	)
-
+	registerSearch(store, db)
 	registerProducts(store, db)
+	registerImages(store, db)
 	registerCategories(store, db)
 	registerCollections(store, db)
+	registerTags(store, db)
+
 }
 
 func registerProducts(store fiber.Router, db *gorm.DB) {
-	h := handlers.NewProductHandler(services.NewProductService(repo.NewProductRepository(db)))
+	productHandler := handlers.NewProductHandler(
+		services.NewProductService(repo.NewProductRepository()),
+		services.NewPricingService(),
+		services.NewPublicationValidationService(),
+	)
 
 	g := store.Group("/products")
-	g.Post("/", h.Create)
-	g.Get("/", h.GetAll)
-	g.Get("/:id", h.GetByID)
-	g.Put("/:id", h.Update)
-	g.Delete("/:id", h.Delete)
+	g.Post("/", productHandler.Create)
+	g.Get("/", productHandler.GetAll)
+	g.Get("/:id", productHandler.GetByID)
+	g.Put("/:id", productHandler.Update)
+	g.Delete("/:id", productHandler.Delete)
+	g.Post("/:id/clone", productHandler.Clone)
+	g.Post("/:id/stock/adjust", productHandler.AdjustStock)
+	g.Post("/:id/stock/reserve", productHandler.ReserveStock)
 }
 
 func registerCategories(store fiber.Router, db *gorm.DB) {
-	h := handlers.NewCategoryHandler(services.NewCategoryService(repo.NewCategoryRepository(db)))
+	h := handlers.NewCategoryHandler()
 
 	g := store.Group("/categories")
 	g.Post("/", h.Create)
@@ -44,15 +54,52 @@ func registerCategories(store fiber.Router, db *gorm.DB) {
 }
 
 func registerCollections(store fiber.Router, db *gorm.DB) {
-	h := handlers.NewCollectionHandler(services.NewCollectionService(repo.NewCollectionRepository(db)))
+	collectionHandler := handlers.NewCollectionHandler()
 
 	g := store.Group("/collections")
+	g.Post("/", collectionHandler.Create)
+	g.Get("/", collectionHandler.GetAll)
+	g.Get("/:id", collectionHandler.GetByID)
+	g.Put("/:id", collectionHandler.Update)
+	g.Delete("/:id", collectionHandler.Delete)
+	g.Get("/:id/products", collectionHandler.GetProducts)
+	g.Post("/:id/products/:productId", collectionHandler.AddProduct)
+	g.Delete("/:id/products/:productId", collectionHandler.RemoveProduct)
+}
+
+func registerImages(store fiber.Router, db *gorm.DB) {
+	imageHandler := handlers.NewImageHandler(
+		services.NewImageValidationService(),
+		services.NewPricingService(),
+		services.NewPublicationValidationService(),
+	)
+
+	g := store.Group("/products/:productId/images")
+	g.Post("/", imageHandler.Create)
+	g.Get("/", imageHandler.GetByProductID)
+	g.Put("/:imageId", imageHandler.Update)
+	g.Delete("/:imageId", imageHandler.Delete)
+	g.Post("/reorder", imageHandler.Reorder)
+}
+
+func registerTags(store fiber.Router, db *gorm.DB) {
+	h := handlers.NewTagHandler()
+
+	g := store.Group("/tags")
 	g.Post("/", h.Create)
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)
 	g.Put("/:id", h.Update)
 	g.Delete("/:id", h.Delete)
-	g.Get("/:id/products", h.GetProducts)
-	g.Post("/:id/products/:productId", h.AddProduct)
-	g.Delete("/:id/products/:productId", h.RemoveProduct)
+
+	// Assign tags to product
+	g = store.Group("/products/:productId/tags")
+	g.Post("/", h.AssignToProduct)
+}
+
+func registerSearch(store fiber.Router, db *gorm.DB) {
+	h := handlers.NewSearchHandler(services.NewProductSearchService(repo.NewProductRepository()))
+
+	g := store.Group("/products")
+	g.Get("/search", h.Search)
 }

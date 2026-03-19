@@ -43,6 +43,14 @@ func (s *collectionService) Create(storeID uuid.UUID, req dto.CreateCollectionRe
 		return nil, errors.New("automatic collection requires a rule")
 	}
 
+	// Validate rule syntax for automatic collections
+	if req.Type == models.CollectionAutomatic && req.Rule != nil && *req.Rule != "" {
+		ruleEngine := NewCollectionRuleEngine()
+		if err := ruleEngine.ValidateRule(*req.Rule); err != nil {
+			return nil, err
+		}
+	}
+
 	col := &models.Collection{
 		StoreID: storeID,
 		Name:    req.Name,
@@ -107,6 +115,14 @@ func (s *collectionService) Update(id, storeID uuid.UUID, req dto.UpdateCollecti
 
 	if col.Type == models.CollectionAutomatic && (col.Rule == nil || *col.Rule == "") {
 		return nil, errors.New("automatic collection requires a rule")
+	}
+
+	// Validate rule syntax for automatic collections
+	if col.Type == models.CollectionAutomatic && col.Rule != nil && *col.Rule != "" {
+		ruleEngine := NewCollectionRuleEngine()
+		if err := ruleEngine.ValidateRule(*col.Rule); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.repo.Update(col); err != nil {
@@ -176,4 +192,17 @@ func (s *collectionService) findOrFail(id, storeID uuid.UUID) (*models.Collectio
 		return nil, errors.New("collection not found")
 	}
 	return col, nil
+}
+
+func toCollectionResponse(c *models.Collection) dto.CollectionResponse {
+	return dto.CollectionResponse{
+		ID:        c.ID,
+		StoreID:   c.StoreID,
+		Name:      c.Name,
+		Slug:      c.Slug,
+		Type:      c.Type,
+		Rule:      c.Rule,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+	}
 }

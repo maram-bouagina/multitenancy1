@@ -35,24 +35,33 @@ func CreateTenantSchema(tenantID string) error {
 	if _, err := conn.ExecContext(context.Background(),
 		fmt.Sprintf("SET search_path TO %q, public", schema),
 	); err != nil {
+		conn.Close()
 		return fmt.Errorf("set search_path failed: %w", err)
 	}
 
 	// 4. Open a GORM session on that pinned connection
 	scopedDB, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{})
 	if err != nil {
+		conn.Close()
 		return fmt.Errorf("open scoped db failed: %w", err)
 	}
 
-	// 5. AutoMigrate inside the tenant schema
+	// 5. AutoMigrate inside the tenant schema (creates tables if they don't exist)
 	if err := scopedDB.AutoMigrate(
 		&storeModel.Store{},
 		&productModels.Product{},
 		&productModels.Category{},
 		&productModels.Collection{},
+		&productModels.ProductImage{},
+		&productModels.StockReservation{},
+		&productModels.StockAdjustmentLog{},
+		&productModels.Tag{},
+		&productModels.ProductTag{},
 	); err != nil {
+		conn.Close()
 		return fmt.Errorf("automigrate failed: %w", err)
 	}
 
+	conn.Close()
 	return nil
 }

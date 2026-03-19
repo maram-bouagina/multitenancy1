@@ -37,6 +37,7 @@ services:
       PGADMIN_CONFIG_SERVER_MODE:            'False'
       PGADMIN_CONFIG_WTF_CSRF_ENABLED:       'False'
       PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: 'False'
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION_ENABLED: 'False'
     ports:
       - "5050:80"
     depends_on:

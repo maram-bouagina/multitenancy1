@@ -35,6 +35,14 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 		return nil, errors.New("slug already in use")
 	}
 
+	existingStores, err := s.repo.FindByTenantID(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(existingStores) > 0 {
+		return nil, errors.New("tenant already has a store")
+	}
+
 	store := &models.Store{
 		TenantID:  tenantID,
 		Name:      req.Name,

@@ -2,19 +2,29 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 
 	"multitenancypfe/internal/helpers"
 	"multitenancypfe/internal/products/dto"
+	"multitenancypfe/internal/products/models"
 	"multitenancypfe/internal/products/services"
 )
 
 type ProductHandler struct {
-	svc services.ProductService
+	svc            services.ProductService
+	pricingSvc     services.PricingService
+	publicationSvc services.PublicationValidationService
 }
 
-func NewProductHandler(svc services.ProductService) *ProductHandler {
-	return &ProductHandler{svc: svc}
+func NewProductHandler(
+	svc services.ProductService,
+	pricingSvc services.PricingService,
+	publicationSvc services.PublicationValidationService,
+) *ProductHandler {
+	return &ProductHandler{
+		svc:            svc,
+		pricingSvc:     pricingSvc,
+		publicationSvc: publicationSvc,
+	}
 }
 
 // POST /api/stores/:storeId/products
@@ -23,11 +33,12 @@ func (h *ProductHandler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	db := helpers.GetTenantDB(c)
 	var req dto.CreateProductRequest
 	if err := helpers.ParseBody(c, &req); err != nil {
 		return err
 	}
-	resp, err := h.svc.Create(storeID, req)
+	resp, err := h.svc.Create(db, storeID, req)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
@@ -40,11 +51,12 @@ func (h *ProductHandler) GetAll(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	db := helpers.GetTenantDB(c)
 	var filter dto.ProductFilter
 	if err := c.QueryParser(&filter); err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
-	resp, err := h.svc.GetAll(storeID, filter)
+	resp, err := h.svc.GetAll(db, storeID, filter)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusInternalServerError, err)
 	}
@@ -57,14 +69,16 @@ func (h *ProductHandler) GetByID(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	db := helpers.GetTenantDB(c)
 	id, err := helpers.ParseID(c)
 	if err != nil {
 		return err
 	}
-	resp, err := h.svc.GetByID(id, storeID)
+	resp, err := h.svc.GetByID(db, id, storeID)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusNotFound, err)
 	}
+
 	return c.JSON(resp)
 }
 
@@ -74,6 +88,7 @@ func (h *ProductHandler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	db := helpers.GetTenantDB(c)
 	id, err := helpers.ParseID(c)
 	if err != nil {
 		return err
@@ -82,10 +97,33 @@ func (h *ProductHandler) Update(c *fiber.Ctx) error {
 	if err := helpers.ParseBody(c, &req); err != nil {
 		return err
 	}
-	resp, err := h.svc.Update(id, storeID, req)
+
+	// If status is being changed to published, validate first
+	if req.Status != nil && *req.Status == "published" {
+		// Get current product to validate
+		current, err := h.svc.GetByID(db, id, storeID)
+		if err != nil {
+			return helpers.Fail(c, fiber.StatusNotFound, err)
+		}
+
+		// Convert to model for validation
+		product := &models.Product{
+			Title:       current.Title,
+			Description: current.Description,
+			Price:       current.Price,
+			Status:      models.ProductStatus(*req.Status),
+		}
+
+		if err := h.publicationSvc.ValidateForPublication(product); err != nil {
+			return helpers.Fail(c, fiber.StatusBadRequest, err)
+		}
+	}
+
+	resp, err := h.svc.Update(db, id, storeID, req)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
+
 	return c.JSON(resp)
 }
 
@@ -95,20 +133,86 @@ func (h *ProductHandler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	db := helpers.GetTenantDB(c)
 	id, err := helpers.ParseID(c)
 	if err != nil {
 		return err
 	}
-	if err := h.svc.Delete(id, storeID); err != nil {
+	if err := h.svc.Delete(db, id, storeID); err != nil {
 		return helpers.Fail(c, fiber.StatusNotFound, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func parseStoreID(c *fiber.Ctx) (uuid.UUID, error) {
-	id, err := uuid.Parse(c.Params("storeId"))
+// POST /api/stores/:storeId/products/:id/clone
+func (h *ProductHandler) Clone(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
 	if err != nil {
-		_ = c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid store id"})
+		return err
 	}
-	return id, err
+	db := helpers.GetTenantDB(c)
+	id, err := helpers.ParseID(c)
+	if err != nil {
+		return err
+	}
+	var req dto.CloneProductRequest
+	if err := helpers.ParseBody(c, &req); err != nil {
+		return err
+	}
+	if req.SourceProductID != id {
+		return helpers.Fail(c, fiber.StatusBadRequest, fiber.NewError(fiber.StatusBadRequest, "source_product_id does not match the product ID in URL"))
+	}
+	resp, err := h.svc.Clone(db, id, storeID, req)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(resp)
+}
+
+// POST /api/stores/:storeId/products/:id/stock/adjust
+func (h *ProductHandler) AdjustStock(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+	id, err := helpers.ParseID(c)
+	if err != nil {
+		return err
+	}
+	var req dto.AdjustStockRequest
+	if err := helpers.ParseBody(c, &req); err != nil {
+		return err
+	}
+	resp, err := h.svc.AdjustStock(db, id, storeID, req)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	}
+	return c.JSON(resp)
+}
+
+// POST /api/stores/:storeId/products/:id/stock/reserve
+func (h *ProductHandler) ReserveStock(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+	id, err := helpers.ParseID(c)
+	if err != nil {
+		return err
+	}
+	userID, err := helpers.ParseUserID(c)
+	if err != nil {
+		return err
+	}
+	var req dto.StockReservationRequest
+	if err := helpers.ParseBody(c, &req); err != nil {
+		return err
+	}
+	resp, err := h.svc.ReserveStock(db, id, storeID, userID, req)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	}
+	return c.JSON(resp)
 }

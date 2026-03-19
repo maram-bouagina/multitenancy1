@@ -6,13 +6,21 @@ import (
 	"multitenancypfe/internal/helpers"
 	"multitenancypfe/internal/middleware"
 	"multitenancypfe/internal/products/dto"
+	"multitenancypfe/internal/products/repo"
 	"multitenancypfe/internal/products/services"
 )
 
-type CategoryHandler struct{ svc services.CategoryService }
+type CategoryHandler struct {
+}
 
-func NewCategoryHandler(svc services.CategoryService) *CategoryHandler {
-	return &CategoryHandler{svc: svc}
+func NewCategoryHandler() *CategoryHandler {
+	return &CategoryHandler{}
+}
+
+// getTenantCategoryService creates a service with the tenant-scoped database
+func (h *CategoryHandler) getTenantCategoryService(c *fiber.Ctx) services.CategoryService {
+	tenantDB := middleware.GetTenantDB(c)
+	return services.NewCategoryService(repo.NewCategoryRepository(tenantDB))
 }
 
 // POST /api/stores/:storeId/categories
@@ -25,20 +33,22 @@ func (h *CategoryHandler) Create(c *fiber.Ctx) error {
 	if err := helpers.ParseBody(c, &req); err != nil {
 		return err
 	}
-	resp, err := h.svc.Create(storeID, req, middleware.GetTenantDB(c))
+	svc := h.getTenantCategoryService(c)
+	resp, err := svc.Create(storeID, req)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(resp)
 }
 
-// GET /api/stores/:storeId/categories — returns full tree
+// GET /api/stores/:storeId/categories
 func (h *CategoryHandler) GetTree(c *fiber.Ctx) error {
 	storeID, err := parseStoreID(c)
 	if err != nil {
 		return err
 	}
-	resp, err := h.svc.GetTree(storeID, middleware.GetTenantDB(c))
+	svc := h.getTenantCategoryService(c)
+	resp, err := svc.GetTree(storeID)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusInternalServerError, err)
 	}
@@ -55,7 +65,8 @@ func (h *CategoryHandler) GetByID(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	resp, err := h.svc.GetByID(id, storeID, middleware.GetTenantDB(c))
+	svc := h.getTenantCategoryService(c)
+	resp, err := svc.GetByID(id, storeID)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusNotFound, err)
 	}
@@ -76,7 +87,8 @@ func (h *CategoryHandler) Update(c *fiber.Ctx) error {
 	if err := helpers.ParseBody(c, &req); err != nil {
 		return err
 	}
-	resp, err := h.svc.Update(id, storeID, req, middleware.GetTenantDB(c))
+	svc := h.getTenantCategoryService(c)
+	resp, err := svc.Update(id, storeID, req)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
@@ -93,7 +105,8 @@ func (h *CategoryHandler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if err := h.svc.Delete(id, storeID, middleware.GetTenantDB(c)); err != nil {
+	svc := h.getTenantCategoryService(c)
+	if err := svc.Delete(id, storeID); err != nil {
 		return helpers.Fail(c, fiber.StatusConflict, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

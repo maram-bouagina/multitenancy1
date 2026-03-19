@@ -22,7 +22,9 @@ type CollectionRepository interface {
 	SlugExists(slug string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error)
 }
 
-type collectionRepository struct{ db *gorm.DB }
+type collectionRepository struct {
+	db *gorm.DB
+}
 
 func NewCollectionRepository(db *gorm.DB) CollectionRepository {
 	return &collectionRepository{db: db}
@@ -71,8 +73,6 @@ func (r *collectionRepository) RemoveProduct(collectionID, productID uuid.UUID) 
 	return r.db.Model(&col).Association("Products").Delete(&product)
 }
 
-// FindProducts handles manual (join) and automatic (rule-based) collections.
-// Rule format: "price > 50", "brand = Nike", "stock > 0"
 func (r *collectionRepository) FindProducts(col *models.Collection, storeID uuid.UUID, page, limit int) ([]models.Product, error) {
 	if page < 1 {
 		page = 1
@@ -80,9 +80,7 @@ func (r *collectionRepository) FindProducts(col *models.Collection, storeID uuid
 	if limit < 1 {
 		limit = 20
 	}
-
 	var products []models.Product
-
 	if col.Type == models.CollectionManual {
 		err := r.db.
 			Joins("JOIN collection_products cp ON cp.product_id = products.id").
@@ -93,11 +91,9 @@ func (r *collectionRepository) FindProducts(col *models.Collection, storeID uuid
 			Find(&products).Error
 		return products, err
 	}
-
-	// Automatic: apply rule as WHERE clause
 	query := r.db.Where("store_id = ? AND deleted_at IS NULL", storeID)
 	if col.Rule != nil && *col.Rule != "" {
-		query = applyRule(query, *col.Rule)
+		query = applyRules(query, *col.Rule)
 	}
 	err := query.
 		Preload("Category").
@@ -116,22 +112,30 @@ func (r *collectionRepository) SlugExists(slug string, storeID uuid.UUID, exclud
 	return count > 0, query.Count(&count).Error
 }
 
-// applyRule parses simple rule strings like "price > 50", "brand = Nike", "stock > 0"
-func applyRule(query *gorm.DB, rule string) *gorm.DB {
-	rule = strings.TrimSpace(rule)
-	operators := []string{" >= ", " <= ", " > ", " < ", " = "}
-	for _, op := range operators {
-		if idx := strings.Index(rule, op); idx != -1 {
-			field := strings.TrimSpace(rule[:idx])
-			value := strings.TrimSpace(rule[idx+len(op):])
-			allowed := map[string]bool{
-				"price": true, "stock": true, "brand": true,
-				"status": true, "visibility": true,
+func applyRules(query *gorm.DB, rules string) *gorm.DB {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return query
+	}
+	allowedFields := map[string]bool{
+		"price": true, "stock": true, "brand": true,
+		"status": true, "visibility": true,
+	}
+	parts := strings.FieldsFunc(rules, func(r rune) bool {
+		return r == 'A' || r == 'a' || r == 'O' || r == 'o'
+	})
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		operators := []string{" >= ", " <= ", " > ", " < ", " = "}
+		for _, op := range operators {
+			if idx := strings.Index(part, op); idx != -1 {
+				field := strings.TrimSpace(part[:idx])
+				value := strings.TrimSpace(part[idx+len(op):])
+				if allowedFields[field] {
+					query = query.Where(field+" "+strings.TrimSpace(op)+" ?", value)
+				}
+				break
 			}
-			if allowed[field] {
-				query = query.Where(field+" "+strings.TrimSpace(op)+" ?", value)
-			}
-			break
 		}
 	}
 	return query
