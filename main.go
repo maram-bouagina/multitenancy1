@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 
 	"multitenancypfe/internal/config"
 	"multitenancypfe/internal/database"
@@ -24,6 +25,12 @@ func main() {
 	jwt.Init(cfg.JWTSecret)
 
 	app := fiber.New()
+
+	// Enable CORS for local development (Next.js running on localhost:3000)
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     "http://localhost:3000",
+		AllowCredentials: true,
+	}))
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})

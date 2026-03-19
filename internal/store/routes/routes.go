@@ -21,5 +21,6 @@ func RegisterStoreRoutes(app *fiber.App, db *gorm.DB) {
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)
 	g.Put("/:id", h.Update)
+	g.Post("/:id/customization/publish", h.PublishCustomization)
 	g.Delete("/:id", h.Delete)
 }

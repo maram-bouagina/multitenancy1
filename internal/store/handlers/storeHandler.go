@@ -77,6 +77,28 @@ func (h *StoreHandler) Update(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
+// POST /api/stores/:id/customization/publish
+func (h *StoreHandler) PublishCustomization(c *fiber.Ctx) error {
+	id, err := authHandlers.ParseID(c)
+	if err != nil {
+		return err
+	}
+
+	var req dto.PublishStoreCustomizationRequest
+	if len(c.Body()) > 0 {
+		if err := authHandlers.ParseBody(c, &req); err != nil {
+			return err
+		}
+	}
+
+	resp, err := h.svc.PublishCustomization(id, req)
+	if err != nil {
+		return authHandlers.Fail(c, fiber.StatusBadRequest, err)
+	}
+
+	return c.JSON(resp)
+}
+
 // DELETE /api/stores/:id
 func (h *StoreHandler) Delete(c *fiber.Ctx) error {
 	id, err := authHandlers.ParseID(c)

@@ -47,9 +47,6 @@ func (s *productService) Create(db *gorm.DB, storeID uuid.UUID, req dto.CreatePr
 
 	// Validation for public products
 	if req.Visibility == models.VisibilityPublic {
-		if req.CategoryID == nil {
-			return nil, errors.New("category is required for public products")
-		}
 		if req.Price <= 0 {
 			return nil, errors.New("price must be greater than 0 for public products")
 		}

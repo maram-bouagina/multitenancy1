@@ -15,6 +15,7 @@ type StoreService interface {
 	GetByID(id uuid.UUID) (*dto.StoreResponse, error)
 	GetByTenantID(tenantID uuid.UUID) ([]dto.StoreResponse, error)
 	Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.StoreResponse, error)
+	PublishCustomization(id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error)
 	Delete(id uuid.UUID) error
 }
 
@@ -44,18 +45,41 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 	}
 
 	store := &models.Store{
-		TenantID:  tenantID,
-		Name:      req.Name,
-		Slug:      req.Slug,
-		Email:     req.Email,
-		Phone:     req.Phone,
-		Address:   req.Address,
-		Logo:      req.Logo,
-		Currency:  req.Currency,
-		Timezone:  req.Timezone,
-		Language:  req.Language,
-		TaxNumber: req.TaxNumber,
-		Status:    "active",
+		TenantID:                  tenantID,
+		Name:                      req.Name,
+		Slug:                      req.Slug,
+		Email:                     req.Email,
+		Phone:                     req.Phone,
+		Address:                   req.Address,
+		Logo:                      req.Logo,
+		Currency:                  req.Currency,
+		Timezone:                  req.Timezone,
+		Language:                  req.Language,
+		ThemePrimaryColor:         "#2563eb",
+		ThemeSecondaryColor:       "#0f172a",
+		ThemeMode:                 "light",
+		ThemeFontFamily:           "Inter",
+		StorefrontLayoutDraft:     "[]",
+		StorefrontLayoutPublished: "[]",
+		ThemeVersion:              1,
+		TaxNumber:                 req.TaxNumber,
+		Status:                    "active",
+	}
+	if req.ThemePrimaryColor != nil && *req.ThemePrimaryColor != "" {
+		store.ThemePrimaryColor = *req.ThemePrimaryColor
+	}
+	if req.ThemeSecondaryColor != nil && *req.ThemeSecondaryColor != "" {
+		store.ThemeSecondaryColor = *req.ThemeSecondaryColor
+	}
+	if req.ThemeMode != nil && *req.ThemeMode != "" {
+		store.ThemeMode = *req.ThemeMode
+	}
+	if req.ThemeFontFamily != nil && *req.ThemeFontFamily != "" {
+		store.ThemeFontFamily = *req.ThemeFontFamily
+	}
+	if req.StorefrontLayoutDraft != nil {
+		store.StorefrontLayoutDraft = *req.StorefrontLayoutDraft
+		store.StorefrontLayoutPublished = *req.StorefrontLayoutDraft
 	}
 	if err := s.repo.Create(store); err != nil {
 		return nil, err
@@ -113,6 +137,21 @@ func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.St
 	if req.Language != nil {
 		store.Language = *req.Language
 	}
+	if req.ThemePrimaryColor != nil {
+		store.ThemePrimaryColor = *req.ThemePrimaryColor
+	}
+	if req.ThemeSecondaryColor != nil {
+		store.ThemeSecondaryColor = *req.ThemeSecondaryColor
+	}
+	if req.ThemeMode != nil {
+		store.ThemeMode = *req.ThemeMode
+	}
+	if req.ThemeFontFamily != nil {
+		store.ThemeFontFamily = *req.ThemeFontFamily
+	}
+	if req.StorefrontLayoutDraft != nil {
+		store.StorefrontLayoutDraft = *req.StorefrontLayoutDraft
+	}
 	if req.TaxNumber != nil {
 		store.TaxNumber = req.TaxNumber
 	}
@@ -123,6 +162,29 @@ func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.St
 	if err := s.repo.Update(store); err != nil {
 		return nil, err
 	}
+	return toStoreResponse(store), nil
+}
+
+func (s *storeService) PublishCustomization(id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error) {
+	store, err := s.findOrFail(id)
+	if err != nil {
+		return nil, err
+	}
+
+	useDraftLayout := true
+	if req.UseDraftLayout != nil {
+		useDraftLayout = *req.UseDraftLayout
+	}
+
+	if useDraftLayout {
+		store.StorefrontLayoutPublished = store.StorefrontLayoutDraft
+	}
+	store.ThemeVersion = store.ThemeVersion + 1
+
+	if err := s.repo.Update(store); err != nil {
+		return nil, err
+	}
+
 	return toStoreResponse(store), nil
 }
 
@@ -148,18 +210,25 @@ func (s *storeService) findOrFail(id uuid.UUID) (*models.Store, error) {
 
 func toStoreResponse(s *models.Store) *dto.StoreResponse {
 	return &dto.StoreResponse{
-		ID:        s.ID.String(),
-		TenantID:  s.TenantID.String(),
-		Name:      s.Name,
-		Slug:      s.Slug,
-		Email:     s.Email,
-		Phone:     s.Phone,
-		Address:   s.Address,
-		Logo:      s.Logo,
-		Currency:  s.Currency,
-		Timezone:  s.Timezone,
-		Language:  s.Language,
-		TaxNumber: s.TaxNumber,
-		Status:    s.Status,
+		ID:                        s.ID.String(),
+		TenantID:                  s.TenantID.String(),
+		Name:                      s.Name,
+		Slug:                      s.Slug,
+		Email:                     s.Email,
+		Phone:                     s.Phone,
+		Address:                   s.Address,
+		Logo:                      s.Logo,
+		Currency:                  s.Currency,
+		Timezone:                  s.Timezone,
+		Language:                  s.Language,
+		ThemePrimaryColor:         s.ThemePrimaryColor,
+		ThemeSecondaryColor:       s.ThemeSecondaryColor,
+		ThemeMode:                 s.ThemeMode,
+		ThemeFontFamily:           s.ThemeFontFamily,
+		StorefrontLayoutDraft:     s.StorefrontLayoutDraft,
+		StorefrontLayoutPublished: s.StorefrontLayoutPublished,
+		ThemeVersion:              s.ThemeVersion,
+		TaxNumber:                 s.TaxNumber,
+		Status:                    s.Status,
 	}
 }
