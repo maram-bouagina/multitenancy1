@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import {
   Tenant,
   Store,
@@ -11,13 +11,13 @@ import {
   LoginResponse,
   CreateTenantRequest,
   CreateStoreRequest,
+  UpdateStoreRequest,
   CreateProductRequest,
   CreateTagRequest,
   CreateCategoryRequest,
   CreateCollectionRequest,
   PaginatedResponse,
-  ProductFilters,
-  ApiResponse
+  ProductFilters
 } from '@/lib/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -107,7 +107,7 @@ class ApiClient {
     return response.data;
   }
 
-  async updateStore(id: string, data: Partial<CreateStoreRequest>): Promise<Store> {
+  async updateStore(id: string, data: UpdateStoreRequest): Promise<Store> {
     const response = await this.client.put<Store>(`/api/stores/${id}`, data);
     return response.data;
   }

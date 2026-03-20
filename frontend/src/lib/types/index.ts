@@ -166,6 +166,24 @@ export interface CreateStoreRequest {
   tax_number?: string;
 }
 
+export interface UpdateStoreRequest {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  logo?: string;
+  currency?: string;
+  timezone?: string;
+  language?: string;
+  theme_primary_color?: string;
+  theme_secondary_color?: string;
+  theme_mode?: 'light' | 'dark' | 'auto';
+  theme_font_family?: string;
+  storefront_layout_draft?: string;
+  tax_number?: string;
+  status?: 'active' | 'suspended' | 'inactive';
+}
+
 export interface CreateProductRequest {
   title: string;
   description?: string;

@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -10,6 +11,22 @@ import (
 	productModels "multitenancypfe/internal/products/models"
 	storeModel "multitenancypfe/internal/store/models"
 )
+
+var tenantSchemaReady sync.Map
+
+func autoMigrateTenantModels(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&storeModel.Store{},
+		&productModels.Product{},
+		&productModels.Category{},
+		&productModels.Collection{},
+		&productModels.ProductImage{},
+		&productModels.StockReservation{},
+		&productModels.StockAdjustmentLog{},
+		&productModels.Tag{},
+		&productModels.ProductTag{},
+	)
+}
 
 func CreateTenantSchema(tenantID string) error {
 	schema := fmt.Sprintf("tenant_%s", tenantID)
@@ -47,21 +64,31 @@ func CreateTenantSchema(tenantID string) error {
 	}
 
 	// 5. AutoMigrate inside the tenant schema (creates tables if they don't exist)
-	if err := scopedDB.AutoMigrate(
-		&storeModel.Store{},
-		&productModels.Product{},
-		&productModels.Category{},
-		&productModels.Collection{},
-		&productModels.ProductImage{},
-		&productModels.StockReservation{},
-		&productModels.StockAdjustmentLog{},
-		&productModels.Tag{},
-		&productModels.ProductTag{},
-	); err != nil {
+	if err := autoMigrateTenantModels(scopedDB); err != nil {
 		conn.Close()
 		return fmt.Errorf("automigrate failed: %w", err)
 	}
 
 	conn.Close()
+	tenantSchemaReady.Store(schema, struct{}{})
+	return nil
+}
+
+func EnsureTenantSchemaUpToDate(tenantID string) error {
+	schema := fmt.Sprintf("tenant_%s", tenantID)
+	if _, ok := tenantSchemaReady.Load(schema); ok {
+		return nil
+	}
+
+	scopedDB := DB.Session(&gorm.Session{})
+	if err := scopedDB.Exec(fmt.Sprintf(`SET search_path = "%s", public`, schema)).Error; err != nil {
+		return fmt.Errorf("set search_path failed: %w", err)
+	}
+
+	if err := autoMigrateTenantModels(scopedDB); err != nil {
+		return fmt.Errorf("automigrate failed: %w", err)
+	}
+
+	tenantSchemaReady.Store(schema, struct{}{})
 	return nil
 }

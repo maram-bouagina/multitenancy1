@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"multitenancypfe/internal/auth/models"
 	"multitenancypfe/internal/config"
+	sfModels "multitenancypfe/internal/storefront/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -28,10 +29,11 @@ func Connect(cfg config.Config) error {
 		return fmt.Errorf("postgres connection failed: %w", err)
 	}
 
-	// AutoMigrate uniquement les tables du schema public
+	// AutoMigrate tables in the public schema (platform-level + global indices)
 	if err := DB.AutoMigrate(
 		&models.PlatformAdmin{},
 		&models.Tenant{},
+		&sfModels.StoreSlugIndex{}, // global public slug routing table
 	); err != nil {
 		return fmt.Errorf("automigrate public schema failed: %w", err)
 	}

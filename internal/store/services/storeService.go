@@ -8,6 +8,7 @@ import (
 	"multitenancypfe/internal/store/dto"
 	"multitenancypfe/internal/store/models"
 	"multitenancypfe/internal/store/repo"
+	sfRepo "multitenancypfe/internal/storefront/repo"
 )
 
 type StoreService interface {
@@ -84,6 +85,8 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 	if err := s.repo.Create(store); err != nil {
 		return nil, err
 	}
+	// Register slug in the public routing index (best-effort; non-blocking)
+	_ = sfRepo.UpsertSlug(store.Slug, store.TenantID, store.ID, store.Status)
 	return toStoreResponse(store), nil
 }
 
@@ -162,6 +165,8 @@ func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.St
 	if err := s.repo.Update(store); err != nil {
 		return nil, err
 	}
+	// Keep slug index in sync (status or other indexed fields may have changed)
+	_ = sfRepo.UpsertSlug(store.Slug, store.TenantID, store.ID, store.Status)
 	return toStoreResponse(store), nil
 }
 
@@ -189,10 +194,16 @@ func (s *storeService) PublishCustomization(id uuid.UUID, req dto.PublishStoreCu
 }
 
 func (s *storeService) Delete(id uuid.UUID) error {
-	if _, err := s.findOrFail(id); err != nil {
+	store, err := s.findOrFail(id)
+	if err != nil {
 		return err
 	}
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	// Remove from public routing index
+	_ = sfRepo.DeleteSlug(store.Slug)
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

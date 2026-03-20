@@ -18,6 +18,10 @@ func TenantDB() fiber.Handler {
 
 		schema := fmt.Sprintf("tenant_%s", tenantID)
 
+		if err := database.EnsureTenantSchemaUpToDate(tenantID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "tenant schema migration failed: " + err.Error()})
+		}
+
 		// Get a new GORM session from the global database
 		// Each request gets its own scoped DB session
 		scopedDB := database.DB.Session(&gorm.Session{})

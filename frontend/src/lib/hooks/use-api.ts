@@ -1,21 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import {
-  Tenant,
-  Store,
-  Product,
-  Category,
-  Collection,
-  Tag,
-  ProductImage,
   LoginRequest,
   CreateTenantRequest,
   CreateStoreRequest,
+  UpdateStoreRequest,
   CreateProductRequest,
   CreateTagRequest,
   CreateCategoryRequest,
   CreateCollectionRequest,
-  PaginatedResponse,
   ProductFilters
 } from '@/lib/types';
 
@@ -63,7 +56,7 @@ export function useUpdateStore() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<CreateStoreRequest> }) =>
+    mutationFn: ({ id, data }: { id: string; data: UpdateStoreRequest }) =>
       apiClient.updateStore(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stores'] });

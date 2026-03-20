@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useStore, useUpdateStore } from '@/lib/hooks/use-api';
-import { useAuth } from '@/lib/hooks/use-auth';
 
 const storeSchema = z.object({
   name: z.string().min(1, 'Store name is required'),
@@ -28,11 +27,23 @@ const storeSchema = z.object({
 
 type StoreForm = z.infer<typeof storeSchema>;
 
+function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    typeof (error as { response?: unknown }).response === 'object' &&
+    (error as { response?: { data?: { error?: string } } }).response?.data?.error
+  ) {
+    return (error as { response: { data: { error: string } } }).response.data.error;
+  }
+  return fallback;
+}
+
 export default function StoreEditPage() {
   const router = useRouter();
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id || '');
-  const { currentStore } = useAuth();
 
   const [error, setError] = useState<string>('');
 
@@ -63,10 +74,22 @@ export default function StoreEditPage() {
 
     try {
       setError('');
-      await updateStoreMutation.mutateAsync({ id, data });
+      await updateStoreMutation.mutateAsync({
+        id,
+        data: {
+          name: data.name,
+          currency: data.currency,
+          timezone: data.timezone,
+          language: data.language,
+          email: data.email || undefined,
+          phone: data.phone || undefined,
+          address: data.address || undefined,
+          tax_number: data.tax_number || undefined,
+        },
+      });
       router.push('/dashboard/stores');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update store');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to update store'));
     }
   };
 
