@@ -54,10 +54,7 @@ func (s *publicationValidationService) GetPublicationErrors(product *models.Prod
 	// Ce champ devrait être défini dans les paramètres du store
 	// Pour maintenant, on le met comme recommandation mais pas bloquant
 
-	// Vérifier catégorie si obligatoire
-	if product.CategoryID == nil {
-		errors = append(errors, "category is required (or optional depending on store policy)")
-	}
+	// Category is optional by default. Store-specific policies can enforce it separately.
 
 	// Vérifier les dates de solde
 	if product.SalePrice != nil {

@@ -104,6 +104,11 @@ func (s *productService) GetAll(db *gorm.DB, storeID uuid.UUID, filter dto.Produ
 		filter.Limit = 20
 	}
 
+	total, err := s.repo.CountAll(db, storeID, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	products, err := s.repo.FindAll(db, storeID, filter)
 	if err != nil {
 		return nil, err
@@ -114,7 +119,21 @@ func (s *productService) GetAll(db *gorm.DB, storeID uuid.UUID, filter dto.Produ
 		result[i] = *toProductResponse(&p)
 	}
 
-	return &dto.ProductListResponse{Products: result, Page: filter.Page, Limit: filter.Limit}, nil
+	totalPages := int(total) / filter.Limit
+	if int(total)%filter.Limit != 0 {
+		totalPages++
+	}
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &dto.ProductListResponse{
+		Data:       result,
+		Total:      total,
+		Page:       filter.Page,
+		Limit:      filter.Limit,
+		TotalPages: totalPages,
+	}, nil
 }
 
 // Met à jour un produit
@@ -445,6 +464,18 @@ func toProductResponse(p *models.Product) *dto.ProductResponse {
 	if p.Category != nil {
 		cat := toCategoryResponse(p.Category)
 		resp.Category = &cat
+	}
+	if len(p.Collections) > 0 {
+		resp.Collections = make([]dto.CollectionResponse, len(p.Collections))
+		for i, collection := range p.Collections {
+			resp.Collections[i] = toCollectionResponse(&collection)
+		}
+	}
+	if len(p.Tags) > 0 {
+		resp.Tags = make([]dto.TagResponse, len(p.Tags))
+		for i, tag := range p.Tags {
+			resp.Tags[i] = *toTagResponse(&tag)
+		}
 	}
 	return resp
 }

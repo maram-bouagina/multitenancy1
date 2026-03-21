@@ -1,7 +1,9 @@
 'use client';
 
+import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -10,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useCollection, useUpdateCollection } from '@/lib/hooks/use-api';
 
@@ -55,8 +58,8 @@ export default function CollectionEditPage() {
       setError('');
       await updateCollectionMutation.mutateAsync({ storeId, collectionId: id, data });
       router.push('/dashboard/collections');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update collection');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to update collection'));
     }
   };
 
@@ -70,15 +73,15 @@ export default function CollectionEditPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-2xl">
         <CardHeader>
           <CardTitle>Edit Collection</CardTitle>
           <CardDescription>
-            Update collection settings.
+            Update collection settings. Manage collection products from a dedicated page.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
@@ -112,9 +115,14 @@ export default function CollectionEditPage() {
               {errors.rule && <p className="text-sm text-red-600">{errors.rule.message}</p>}
             </div>
 
-            <Button type="submit" className="w-full" disabled={updateCollectionMutation.isPending}>
-              Save collection
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="w-full" asChild>
+                <Link href={`/dashboard/collections/${id}/products`}>Manage products</Link>
+              </Button>
+              <Button type="submit" className="w-full" disabled={updateCollectionMutation.isPending}>
+                Save collection
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>

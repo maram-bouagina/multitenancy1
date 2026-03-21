@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useCreateCollection } from '@/lib/hooks/use-api';
 
@@ -29,7 +30,7 @@ export default function NewCollectionPage() {
   const [error, setError] = useState<string>('');
   const createCollectionMutation = useCreateCollection();
 
-  const { register, handleSubmit, formState: { errors }, watch } = useForm<CollectionForm>({
+  const { register, handleSubmit, formState: { errors } } = useForm<CollectionForm>({
     resolver: zodResolver(collectionSchema),
     defaultValues: { type: 'manual' },
   });
@@ -44,8 +45,8 @@ export default function NewCollectionPage() {
       setError('');
       await createCollectionMutation.mutateAsync({ storeId, data });
       router.push('/dashboard/collections');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create collection');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to create collection'));
     }
   };
 

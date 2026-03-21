@@ -2,6 +2,9 @@ package repo
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,6 +22,7 @@ type CollectionRepository interface {
 	AddProduct(collectionID, productID uuid.UUID) error
 	RemoveProduct(collectionID, productID uuid.UUID) error
 	FindProducts(col *models.Collection, storeID uuid.UUID, page, limit int) ([]models.Product, error)
+	CountProducts(col *models.Collection, storeID uuid.UUID) (int64, error)
 	SlugExists(slug string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error)
 }
 
@@ -93,7 +97,11 @@ func (r *collectionRepository) FindProducts(col *models.Collection, storeID uuid
 	}
 	query := r.db.Where("store_id = ? AND deleted_at IS NULL", storeID)
 	if col.Rule != nil && *col.Rule != "" {
-		query = applyRules(query, *col.Rule)
+		filteredQuery, err := applyRules(query, *col.Rule)
+		if err != nil {
+			return nil, err
+		}
+		query = filteredQuery
 	}
 	err := query.
 		Preload("Category").
@@ -101,6 +109,29 @@ func (r *collectionRepository) FindProducts(col *models.Collection, storeID uuid
 		Limit(limit).Offset((page - 1) * limit).
 		Find(&products).Error
 	return products, err
+}
+
+func (r *collectionRepository) CountProducts(col *models.Collection, storeID uuid.UUID) (int64, error) {
+	var total int64
+
+	if col.Type == models.CollectionManual {
+		err := r.db.Model(&models.Product{}).
+			Joins("JOIN collection_products cp ON cp.product_id = products.id").
+			Where("cp.collection_id = ? AND products.store_id = ? AND products.deleted_at IS NULL", col.ID, storeID).
+			Count(&total).Error
+		return total, err
+	}
+
+	query := r.db.Model(&models.Product{}).Where("store_id = ? AND deleted_at IS NULL", storeID)
+	if col.Rule != nil && *col.Rule != "" {
+		filteredQuery, err := applyRules(query, *col.Rule)
+		if err != nil {
+			return 0, err
+		}
+		query = filteredQuery
+	}
+
+	return total, query.Count(&total).Error
 }
 
 func (r *collectionRepository) SlugExists(slug string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error) {
@@ -112,31 +143,41 @@ func (r *collectionRepository) SlugExists(slug string, storeID uuid.UUID, exclud
 	return count > 0, query.Count(&count).Error
 }
 
-func applyRules(query *gorm.DB, rules string) *gorm.DB {
-	rules = strings.TrimSpace(rules)
-	if rules == "" {
-		return query
+func applyRules(query *gorm.DB, rule string) (*gorm.DB, error) {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return query, nil
 	}
-	allowedFields := map[string]bool{
-		"price": true, "stock": true, "brand": true,
-		"status": true, "visibility": true,
+
+	re := regexp.MustCompile(`^(price|stock|status|visibility|brand)\s*(>=|<=|>|<|=)\s*(.+)$`)
+	matches := re.FindStringSubmatch(rule)
+	if len(matches) != 4 {
+		return nil, fmt.Errorf("invalid rule format")
 	}
-	parts := strings.FieldsFunc(rules, func(r rune) bool {
-		return r == 'A' || r == 'a' || r == 'O' || r == 'o'
-	})
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		operators := []string{" >= ", " <= ", " > ", " < ", " = "}
-		for _, op := range operators {
-			if idx := strings.Index(part, op); idx != -1 {
-				field := strings.TrimSpace(part[:idx])
-				value := strings.TrimSpace(part[idx+len(op):])
-				if allowedFields[field] {
-					query = query.Where(field+" "+strings.TrimSpace(op)+" ?", value)
-				}
-				break
-			}
+
+	field := matches[1]
+	operator := matches[2]
+	rawValue := strings.TrimSpace(matches[3])
+
+	switch field {
+	case "price":
+		value, err := strconv.ParseFloat(rawValue, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid price rule value")
 		}
+		return query.Where(field+" "+operator+" ?", value), nil
+	case "stock":
+		value, err := strconv.Atoi(rawValue)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock rule value")
+		}
+		return query.Where(field+" "+operator+" ?", value), nil
+	case "status", "visibility", "brand":
+		if operator != "=" {
+			return nil, fmt.Errorf("operator %s not supported for %s", operator, field)
+		}
+		return query.Where(field+" = ?", rawValue), nil
+	default:
+		return nil, fmt.Errorf("unsupported rule field")
 	}
-	return query
 }

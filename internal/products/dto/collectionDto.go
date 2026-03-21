@@ -36,6 +36,8 @@ type CollectionResponse struct {
 type CollectionWithProductsResponse struct {
 	CollectionResponse
 	Products []ProductResponse `json:"products"`
+	Total    int64             `json:"total"`
 	Page     int               `json:"page"`
 	Limit    int               `json:"limit"`
+	Pages    int               `json:"pages"`
 }

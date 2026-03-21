@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -10,17 +11,33 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useCategory, useUpdateCategory } from '@/lib/hooks/use-api';
+import { getApiErrorMessage } from '@/lib/api/errors';
+import { useCategories, useCategory, useUpdateCategory } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
+import type { Category } from '@/lib/types';
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
   slug: z.string().optional(),
   description: z.string().optional(),
   visibility: z.enum(['public', 'private']),
+  parent_id: z.string().optional(),
 });
 
 type CategoryForm = z.infer<typeof categorySchema>;
+
+type CategoryNode = Pick<Category, 'id' | 'name'> & { children?: CategoryNode[] };
+
+function flattenCategories(categories: CategoryNode[], depth = 0): Array<{ id: string; name: string; depth: number }> {
+  return categories.flatMap((category) => [
+    { id: category.id, name: category.name, depth },
+    ...flattenCategories(category.children ?? [], depth + 1),
+  ]);
+}
+
+function collectDescendantIds(category: CategoryNode): string[] {
+  return (category.children ?? []).flatMap((child) => [child.id, ...collectDescendantIds(child)]);
+}
 
 export default function CategoryEditPage() {
   const router = useRouter();
@@ -32,6 +49,7 @@ export default function CategoryEditPage() {
   const [error, setError] = useState<string>('');
 
   const { data: category, isLoading } = useCategory(storeId, id || '');
+  const { data: categories } = useCategories(storeId);
   const updateCategoryMutation = useUpdateCategory();
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CategoryForm>({
     resolver: zodResolver(categorySchema),
@@ -44,9 +62,32 @@ export default function CategoryEditPage() {
         slug: category.slug,
         description: category.description || '',
         visibility: category.visibility,
+        parent_id: category.parent_id || '',
       });
     }
   }, [category, reset]);
+
+  const disallowedCategoryIds = new Set<string>();
+  if (categories) {
+    const currentCategory = flattenCategories(categories).find((item) => item.id === id);
+    if (currentCategory) {
+      disallowedCategoryIds.add(id);
+    }
+    const walk = (nodes: typeof categories) => {
+      for (const node of nodes) {
+        if (node.id === id) {
+          collectDescendantIds(node).forEach((descendantId) => disallowedCategoryIds.add(descendantId));
+          return true;
+        }
+        if (node.children && walk(node.children)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    walk(categories);
+  }
+  const categoryOptions = flattenCategories(categories ?? []).filter((item) => !disallowedCategoryIds.has(item.id));
 
   const onSubmit = async (data: CategoryForm) => {
     if (!id) return;
@@ -54,8 +95,8 @@ export default function CategoryEditPage() {
       setError('');
       await updateCategoryMutation.mutateAsync({ storeId, categoryId: id, data });
       router.push('/dashboard/categories');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update category');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to update category'));
     }
   };
 
@@ -85,7 +126,7 @@ export default function CategoryEditPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">Name *</Label>
               <Input id="name" placeholder="T-Shirts" {...register('name')} />
               {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
             </div>
@@ -103,7 +144,20 @@ export default function CategoryEditPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="visibility">Visibility</Label>
+              <Label htmlFor="parent_id">Parent category</Label>
+              <select id="parent_id" {...register('parent_id')} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-site-text shadow-sm transition-colors file:border-0 file:bg-transparent file:text-site-text file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+                <option value="">None (top-level category)</option>
+                {categoryOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {'- '.repeat(option.depth)}{option.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500">Subcategories are categories with a parent category.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="visibility">Visibility *</Label>
               <select id="visibility" {...register('visibility')} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-site-text shadow-sm transition-colors file:border-0 file:bg-transparent file:text-site-text file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
                 <option value="public">Public</option>
                 <option value="private">Private</option>
@@ -111,9 +165,14 @@ export default function CategoryEditPage() {
               {errors.visibility && <p className="text-sm text-red-600">{errors.visibility.message}</p>}
             </div>
 
-            <Button type="submit" className="w-full" disabled={updateCategoryMutation.isPending}>
-              Save category
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="w-full" asChild>
+                <Link href="/dashboard/categories">Cancel</Link>
+              </Button>
+              <Button type="submit" className="w-full" disabled={updateCategoryMutation.isPending}>
+                Save category
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>

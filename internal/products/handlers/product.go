@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 
 	"multitenancypfe/internal/helpers"
@@ -52,10 +55,48 @@ func (h *ProductHandler) GetAll(c *fiber.Ctx) error {
 		return err
 	}
 	db := helpers.GetTenantDB(c)
-	var filter dto.ProductFilter
-	if err := c.QueryParser(&filter); err != nil {
-		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	filter := dto.ProductFilter{
+		CategoryID: strings.TrimSpace(c.Query("category_id")),
+		Status:     strings.TrimSpace(c.Query("status")),
+		Visibility: strings.TrimSpace(c.Query("visibility")),
+		Brand:      strings.TrimSpace(c.Query("brand")),
+		Search:     strings.TrimSpace(c.Query("search")),
+		SortBy:     strings.TrimSpace(c.Query("sort_by", "newest")),
+		Page:       1,
+		Limit:      20,
 	}
+
+	if pageRaw := c.Query("page"); pageRaw != "" {
+		if page, parseErr := strconv.Atoi(pageRaw); parseErr == nil && page > 0 {
+			filter.Page = page
+		}
+	}
+	if limitRaw := c.Query("limit"); limitRaw != "" {
+		if limit, parseErr := strconv.Atoi(limitRaw); parseErr == nil && limit > 0 {
+			filter.Limit = limit
+		}
+	}
+
+	priceMinRaw := c.Query("price_min", c.Query("min_price"))
+	if priceMinRaw != "" {
+		if priceMin, parseErr := strconv.ParseFloat(priceMinRaw, 64); parseErr == nil {
+			filter.PriceMin = &priceMin
+		}
+	}
+	priceMaxRaw := c.Query("price_max", c.Query("max_price"))
+	if priceMaxRaw != "" {
+		if priceMax, parseErr := strconv.ParseFloat(priceMaxRaw, 64); parseErr == nil {
+			filter.PriceMax = &priceMax
+		}
+	}
+
+	inStockRaw := c.Query("in_stock", c.Query("inStock"))
+	if inStockRaw != "" {
+		if inStock, parseErr := strconv.ParseBool(inStockRaw); parseErr == nil {
+			filter.InStock = &inStock
+		}
+	}
+
 	resp, err := h.svc.GetAll(db, storeID, filter)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusInternalServerError, err)

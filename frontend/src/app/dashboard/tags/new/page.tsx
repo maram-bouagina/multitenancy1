@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCreateTag } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
 
@@ -20,6 +21,11 @@ const tagSchema = z.object({
 });
 
 type TagForm = z.infer<typeof tagSchema>;
+
+function normalizeOptionalColor(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 export default function NewTagPage() {
   const router = useRouter();
@@ -40,10 +46,16 @@ export default function NewTagPage() {
 
     try {
       setError('');
-      await createTagMutation.mutateAsync({ storeId, data });
+      await createTagMutation.mutateAsync({
+        storeId,
+        data: {
+          ...data,
+          color: normalizeOptionalColor(data.color),
+        },
+      });
       router.push('/dashboard/tags');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create tag');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to create tag'));
     }
   };
 

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useTag, useUpdateTag } from '@/lib/hooks/use-api';
 
@@ -20,6 +21,11 @@ const tagSchema = z.object({
 });
 
 type TagForm = z.infer<typeof tagSchema>;
+
+function normalizeOptionalColor(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 export default function TagEditPage() {
   const router = useRouter();
@@ -51,10 +57,17 @@ export default function TagEditPage() {
     if (!id) return;
     try {
       setError('');
-      await updateTagMutation.mutateAsync({ storeId, tagId: id, data });
+      await updateTagMutation.mutateAsync({
+        storeId,
+        tagId: id,
+        data: {
+          ...data,
+          color: normalizeOptionalColor(data.color),
+        },
+      });
       router.push('/dashboard/tags');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update tag');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to update tag'));
     }
   };
 

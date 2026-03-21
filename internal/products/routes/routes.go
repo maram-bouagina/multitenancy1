@@ -21,7 +21,6 @@ func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
 	registerCategories(store, db)
 	registerCollections(store, db)
 	registerTags(store, db)
-
 }
 
 func registerProducts(store fiber.Router, db *gorm.DB) {
@@ -30,8 +29,16 @@ func registerProducts(store fiber.Router, db *gorm.DB) {
 		services.NewPricingService(),
 		services.NewPublicationValidationService(),
 	)
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository())
 
 	g := store.Group("/products")
+
+	// Import/Export (static routes first)
+	g.Get("/export", importExportHandler.ExportProducts)
+	g.Post("/import", importExportHandler.ImportProducts)
+	g.Get("/import/template", importExportHandler.ProductImportTemplate)
+
+	// CRUD
 	g.Post("/", productHandler.Create)
 	g.Get("/", productHandler.GetAll)
 	g.Get("/:id", productHandler.GetByID)
@@ -44,8 +51,16 @@ func registerProducts(store fiber.Router, db *gorm.DB) {
 
 func registerCategories(store fiber.Router, db *gorm.DB) {
 	h := handlers.NewCategoryHandler()
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository())
 
 	g := store.Group("/categories")
+
+	// Import/Export (static routes first)
+	g.Get("/export", importExportHandler.ExportCategories)
+	g.Post("/import", importExportHandler.ImportCategories)
+	g.Get("/import/template", importExportHandler.CategoryImportTemplate)
+
+	// CRUD
 	g.Post("/", h.Create)
 	g.Get("/", h.GetTree)
 	g.Get("/:id", h.GetByID)

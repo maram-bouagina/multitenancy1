@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect, ReactNode } from 'react';
 import { Tenant, Store, LoginResponse } from '@/lib/types';
 import { apiClient } from '@/lib/api/client';
 
@@ -28,30 +28,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = !!user && !!token;
 
-  useEffect(() => {
-    // Check for existing auth data on mount
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('auth_user');
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    setCurrentStore(null);
+    setStores([]);
 
-    if (storedToken && storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setToken(storedToken);
-        setUser(parsedUser);
-        // Load stores for this tenant
-        loadStores(storedToken, parsedUser.id);
-      } catch (error) {
-        console.error('Failed to parse stored auth data:', error);
-        logout();
-      }
-    } else {
-      setIsLoading(false);
-    }
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+
+    setIsLoading(false);
   }, []);
 
-  const loadStores = async (authToken: string, tenantId: string) => {
+  const loadStores = useCallback(async (authToken: string) => {
     try {
-      // Set token temporarily for this request
       const originalToken = apiClient.getToken();
       apiClient.setToken(authToken);
 
@@ -59,12 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setStores(userStores);
 
-      // Set first store as current if no current store is set
       if (userStores.length > 0 && !currentStore) {
         setCurrentStore(userStores[0]);
       }
 
-      // Restore original token
       if (originalToken) {
         apiClient.setToken(originalToken);
       }
@@ -73,36 +61,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentStore]);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('auth_token');
+    const storedUser = localStorage.getItem('auth_user');
+
+    if (storedToken && storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser) as Tenant;
+        setToken(storedToken);
+        setUser(parsedUser);
+        loadStores(storedToken);
+      } catch (error) {
+        console.error('Failed to parse stored auth data:', error);
+        logout();
+      }
+    } else {
+      setIsLoading(false);
+    }
+  }, [loadStores, logout]);
 
   const login = (response: LoginResponse) => {
     setUser(response.tenant);
     setToken(response.token);
 
-    // Store in localStorage
     localStorage.setItem('auth_token', response.token);
     localStorage.setItem('auth_user', JSON.stringify(response.tenant));
 
-    // Load stores for this tenant
-    loadStores(response.token, response.tenant.id);
-  };
-
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    setCurrentStore(null);
-    setStores([]);
-
-    // Clear localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-
-    setIsLoading(false);
+    loadStores(response.token);
   };
 
   const refreshStores = async () => {
     if (user && token) {
-      await loadStores(token, user.id);
+      await loadStores(token);
     }
   };
 

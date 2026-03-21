@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
@@ -10,9 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { useProduct, useUpdateProduct, useCategories } from '@/lib/hooks/use-api';
+import { useAssignProductTags, useCategories, useProduct, useTags, useUpdateProduct } from '@/lib/hooks/use-api';
 
 const productSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -34,6 +36,16 @@ const productSchema = z.object({
 });
 
 type ProductForm = z.infer<typeof productSchema>;
+const NO_CATEGORY_VALUE = '__none__';
+
+function optionalString(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function optionalNumber(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -45,7 +57,10 @@ export default function EditProductPage() {
   const { data: product, isLoading, isError } = useProduct(storeId, productId);
   const updateProductMutation = useUpdateProduct();
   const { data: categories } = useCategories(storeId);
+  const { data: tags } = useTags(storeId);
+  const assignTagsMutation = useAssignProductTags();
   const [error, setError] = useState<string>('');
+  const [selectedTagIdsOverride, setSelectedTagIdsOverride] = useState<string[] | null>(null);
 
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -74,6 +89,19 @@ export default function EditProductPage() {
     }
   }, [product, reset]);
 
+  const initialTagIds = product?.tags?.map((tag) => tag.id) ?? [];
+  const selectedTagIds = selectedTagIdsOverride ?? initialTagIds;
+
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIdsOverride((current) => {
+      const base = current ?? initialTagIds;
+
+      return base.includes(tagId)
+        ? base.filter((id) => id !== tagId)
+        : [...base, tagId];
+    });
+  };
+
   const onSubmit = async (data: ProductForm) => {
     if (!storeId) {
       setError('Select a store before updating a product.');
@@ -82,10 +110,25 @@ export default function EditProductPage() {
 
     try {
       setError('');
-      await updateProductMutation.mutateAsync({ storeId, productId, data });
+      const payload = {
+        ...data,
+        slug: optionalString(data.slug),
+        description: optionalString(data.description),
+        sku: optionalString(data.sku),
+        dimensions: optionalString(data.dimensions),
+        brand: optionalString(data.brand),
+        tax_class: optionalString(data.tax_class),
+        category_id: optionalString(data.category_id),
+        sale_price: optionalNumber(data.sale_price),
+        weight: optionalNumber(data.weight),
+      };
+
+      await updateProductMutation.mutateAsync({ storeId, productId, data: payload });
+      await assignTagsMutation.mutateAsync({ storeId, productId, tagIds: selectedTagIds });
+
       router.push('/dashboard/products');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update product');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to update product'));
     }
   };
 
@@ -116,7 +159,7 @@ export default function EditProductPage() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="title">Product Title</Label>
+                <Label htmlFor="title">Product Title *</Label>
                 <Input id="title" placeholder="Cool T-Shirt" {...register('title')} />
                 {errors.title && <p className="text-sm text-red-600">{errors.title.message}</p>}
               </div>
@@ -134,7 +177,7 @@ export default function EditProductPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price">Price</Label>
+                <Label htmlFor="price">Price *</Label>
                 <Input id="price" type="number" step="0.01" placeholder="0.00" {...register('price', { valueAsNumber: true })} />
                 {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
               </div>
@@ -146,19 +189,19 @@ export default function EditProductPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="currency">Currency</Label>
+                <Label htmlFor="currency">Currency *</Label>
                 <Input id="currency" placeholder="USD" {...register('currency')} />
                 {errors.currency && <p className="text-sm text-red-600">{errors.currency.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="stock">Stock</Label>
+                <Label htmlFor="stock">Stock *</Label>
                 <Input id="stock" type="number" placeholder="0" {...register('stock', { valueAsNumber: true })} />
                 {errors.stock && <p className="text-sm text-red-600">{errors.stock.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
+                <Label htmlFor="status">Status *</Label>
                 <Controller
                   name="status"
                   control={control}
@@ -179,7 +222,7 @@ export default function EditProductPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="visibility">Visibility</Label>
+                <Label htmlFor="visibility">Visibility *</Label>
                 <Controller
                   name="visibility"
                   control={control}
@@ -211,12 +254,15 @@ export default function EditProductPage() {
                   name="category_id"
                   control={control}
                   render={({ field }) => (
-                    <Select value={field.value || ''} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value || NO_CATEGORY_VALUE}
+                      onValueChange={(value) => field.onChange(value === NO_CATEGORY_VALUE ? '' : value)}
+                    >
                       <SelectTrigger id="category_id">
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value={NO_CATEGORY_VALUE}>None</SelectItem>
                         {categories?.map((category) => (
                           <SelectItem key={category.id} value={category.id}>
                             {category.name}
@@ -260,9 +306,46 @@ export default function EditProductPage() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={updateProductMutation.isPending}>
-              {updateProductMutation.isPending ? 'Updating...' : 'Update Product'}
-            </Button>
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Tags</h2>
+                <p className="text-sm text-gray-600">Assign tags to improve filtering and merchandising.</p>
+              </div>
+              {!tags || tags.length === 0 ? (
+                <p className="text-sm text-gray-500">Create tags first to assign them to this product.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {tags.map((tag) => {
+                    const checked = selectedTagIds.includes(tag.id);
+
+                    return (
+                      <label key={tag.id} className="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTag(tag.id)}
+                          className="h-4 w-4"
+                        />
+                        <span>{tag.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="w-full" asChild>
+                <Link href="/dashboard/products">Cancel</Link>
+              </Button>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={updateProductMutation.isPending || assignTagsMutation.isPending}
+              >
+                {updateProductMutation.isPending || assignTagsMutation.isPending ? 'Updating...' : 'Update Product'}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>

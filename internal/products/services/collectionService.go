@@ -170,16 +170,31 @@ func (s *collectionService) GetProducts(collectionID, storeID uuid.UUID, page, l
 		return nil, err
 	}
 
+	total, err := s.repo.CountProducts(col, storeID)
+	if err != nil {
+		return nil, err
+	}
+
 	productResponses := make([]dto.ProductResponse, len(products))
 	for i, p := range products {
 		productResponses[i] = *toProductResponse(&p)
 	}
 
+	pages := 1
+	if limit > 0 {
+		pages = int((total + int64(limit) - 1) / int64(limit))
+		if pages < 1 {
+			pages = 1
+		}
+	}
+
 	return &dto.CollectionWithProductsResponse{
 		CollectionResponse: toCollectionResponse(col),
 		Products:           productResponses,
+		Total:              total,
 		Page:               page,
 		Limit:              limit,
+		Pages:              pages,
 	}, nil
 }
 

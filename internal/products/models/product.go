@@ -26,7 +26,7 @@ type Product struct {
 	CategoryID        *uuid.UUID        `gorm:"type:uuid;index" json:"category_id,omitempty"`
 	Title             string            `gorm:"type:varchar(255);not null" json:"title"`
 	Description       *string           `gorm:"type:text" json:"description,omitempty"`
-	Slug              string            `gorm:"type:varchar(255);not null;uniqueIndex:idx_slug_store" json:"slug"`
+	Slug              string            `gorm:"type:varchar(255);not null;index" json:"slug"`
 	Status            ProductStatus     `gorm:"type:varchar(20);not null;default:'draft'" json:"status"`
 	Visibility        ProductVisibility `gorm:"type:varchar(20);not null;default:'public'" json:"visibility"`
 	Price             float64           `gorm:"type:decimal(12,2);not null;default:0" json:"price"` // prix normal
@@ -50,4 +50,5 @@ type Product struct {
 	// Relations
 	Category    *Category    `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
 	Collections []Collection `gorm:"many2many:collection_products;" json:"collections,omitempty"`
+	Tags        []Tag        `gorm:"many2many:product_tags;" json:"tags,omitempty"`
 }

@@ -93,6 +93,11 @@ export function useProducts(storeId: string, filters?: ProductFilters) {
     queryKey: ['products', storeId, filters],
     queryFn: () => apiClient.getProducts(storeId, filters),
     enabled: !!storeId,
+    staleTime: 15000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -246,6 +251,40 @@ export function useDeleteCollection() {
   });
 }
 
+export function useCollectionProducts(storeId: string, collectionId: string, page = 1, limit = 100) {
+  return useQuery({
+    queryKey: ['collections', storeId, collectionId, 'products', page, limit],
+    queryFn: () => apiClient.getCollectionProducts(storeId, collectionId, page, limit),
+    enabled: !!storeId && !!collectionId,
+  });
+}
+
+export function useAddProductToCollection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, collectionId, productId }: { storeId: string; collectionId: string; productId: string }) =>
+      apiClient.addProductToCollection(storeId, collectionId, productId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['collections', variables.storeId, variables.collectionId, 'products'] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.storeId, variables.productId] });
+    },
+  });
+}
+
+export function useRemoveProductFromCollection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, collectionId, productId }: { storeId: string; collectionId: string; productId: string }) =>
+      apiClient.removeProductFromCollection(storeId, collectionId, productId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['collections', variables.storeId, variables.collectionId, 'products'] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.storeId, variables.productId] });
+    },
+  });
+}
+
 // Tag hooks
 export function useTags(storeId: string) {
   return useQuery({
@@ -295,6 +334,19 @@ export function useDeleteTag() {
       apiClient.deleteTag(storeId, tagId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
+export function useAssignProductTags() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, productId, tagIds }: { storeId: string; productId: string; tagIds: string[] }) =>
+      apiClient.assignTagsToProduct(storeId, productId, tagIds),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products', variables.storeId, variables.productId] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.storeId] });
     },
   });
 }

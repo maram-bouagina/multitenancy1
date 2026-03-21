@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCollections, useDeleteCollection } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, PackageOpen, Trash2 } from 'lucide-react';
 
 export default function CollectionsPage() {
   const { currentStore } = useAuth();
@@ -61,6 +61,12 @@ export default function CollectionsPage() {
                     <TableCell className="text-sm text-gray-600"><span className="capitalize">{collection.type}</span></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/dashboard/collections/${collection.id}/products`}>
+                            <PackageOpen className="mr-2 h-4 w-4" />
+                            Products
+                          </Link>
+                        </Button>
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/dashboard/collections/${collection.id}`}>
                             <Edit className="mr-2 h-4 w-4" />

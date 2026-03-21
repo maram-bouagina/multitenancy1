@@ -15,7 +15,7 @@ import (
 var tenantSchemaReady sync.Map
 
 func autoMigrateTenantModels(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&storeModel.Store{},
 		&productModels.Product{},
 		&productModels.Category{},
@@ -25,7 +25,27 @@ func autoMigrateTenantModels(db *gorm.DB) error {
 		&productModels.StockAdjustmentLog{},
 		&productModels.Tag{},
 		&productModels.ProductTag{},
-	)
+	); err != nil {
+		return err
+	}
+
+	if err := ensureProductSlugCompositeUniqueIndex(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureProductSlugCompositeUniqueIndex(db *gorm.DB) error {
+	// Legacy schemas may have idx_slug_store on (slug) only or as non-partial unique.
+	// Keep uniqueness only for active rows to allow slug reuse after soft delete.
+	if err := db.Exec(`DROP INDEX IF EXISTS idx_slug_store`).Error; err != nil {
+		return fmt.Errorf("drop legacy idx_slug_store failed: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_slug_store ON products (store_id, slug) WHERE deleted_at IS NULL`).Error; err != nil {
+		return fmt.Errorf("create partial idx_slug_store failed: %w", err)
+	}
+	return nil
 }
 
 func CreateTenantSchema(tenantID string) error {

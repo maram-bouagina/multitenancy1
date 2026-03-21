@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCreateStore } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
 
@@ -43,8 +44,8 @@ export default function NewStorePage() {
       const store = await createStoreMutation.mutateAsync(data);
       setCurrentStore(store);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create store');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to create store'));
     }
   };
 

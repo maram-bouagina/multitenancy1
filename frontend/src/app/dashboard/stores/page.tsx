@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useStores, useDeleteStore } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
+import type { Store } from '@/lib/types';
 import { Edit, Palette, Trash2 } from 'lucide-react';
 
 export default function StoresPage() {
@@ -15,8 +17,8 @@ export default function StoresPage() {
   const { currentStore, setCurrentStore } = useAuth();
   const deleteStoreMutation = useDeleteStore();
 
-  const handleSelectStore = (store: { id: string; name: string }) => {
-    setCurrentStore(store as any);
+  const handleSelectStore = (store: Store) => {
+    setCurrentStore(store);
     router.push('/dashboard');
   };
 
@@ -24,8 +26,8 @@ export default function StoresPage() {
     if (!confirm('Delete this store?')) return;
     try {
       await deleteStoreMutation.mutateAsync(id);
-    } catch (error) {
-      console.error(error);
+    } catch (error: unknown) {
+      console.error(getApiErrorMessage(error, 'Failed to delete store'));
     }
   };
 

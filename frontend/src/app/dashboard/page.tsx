@@ -3,8 +3,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useStores, useProducts, useCategories, useCollections, useTags } from '@/lib/hooks/use-api';
-import { Store, Package, FolderOpen, Tag as TagIcon, Plus, TrendingUp } from 'lucide-react';
+import { useProducts, useCategories, useCollections, useTags } from '@/lib/hooks/use-api';
+import { Package, FolderOpen, Tag as TagIcon, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/hooks/use-auth';
 
@@ -78,7 +78,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Welcome back! Here's what's happening with your store.</p>
+          <p className="text-gray-600">Welcome back! Here&apos;s what&apos;s happening with your store.</p>
         </div>
         <Button asChild>
           <Link href="/dashboard/products/new">
@@ -126,7 +126,7 @@ export default function DashboardPage() {
                 {products.data.slice(0, 5).map((product) => (
                   <div key={product.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="flex-shrink-0">
+                      <div className="shrink-0">
                         <div className="h-8 w-8 bg-gray-200 rounded"></div>
                       </div>
                       <div>

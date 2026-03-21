@@ -57,14 +57,20 @@ type UpdateProductRequest struct {
 }
 
 // Filtres pour requêtes GET
+// NOTE: plain string types are required here because Fiber v2's QueryParser
+// cannot decode custom/pointer types (uuid.UUID, ProductStatus, …) from query strings.
 type ProductFilter struct {
-	CategoryID *uuid.UUID                `query:"category_id"`
-	Status     *models.ProductStatus     `query:"status"`
-	Visibility *models.ProductVisibility `query:"visibility"`
-	Brand      *string                   `query:"brand"`
-	Search     *string                   `query:"search"`
-	Page       int                       `query:"page"`
-	Limit      int                       `query:"limit"`
+	CategoryID string `query:"category_id"`
+	Status     string `query:"status"`
+	Visibility string `query:"visibility"`
+	Brand      string `query:"brand"`
+	Search     string `query:"search"`
+	PriceMin   *float64
+	PriceMax   *float64
+	InStock    *bool
+	SortBy     string
+	Page       int `query:"page"`
+	Limit      int `query:"limit"`
 }
 
 // Filtres avancés pour la recherche et filtrage du catalogue
@@ -127,13 +133,17 @@ type ProductResponse struct {
 	CreatedAt         time.Time                `json:"created_at"`
 	UpdatedAt         time.Time                `json:"updated_at"`
 	Category          *CategoryResponse        `json:"category,omitempty"`
+	Collections       []CollectionResponse     `json:"collections,omitempty"`
+	Tags              []TagResponse            `json:"tags,omitempty"`
 }
 
-// Liste de produits
+// Liste de produits – structure alignée sur PaginatedResponse<T> du frontend
 type ProductListResponse struct {
-	Products []ProductResponse `json:"products"`
-	Page     int               `json:"page"`
-	Limit    int               `json:"limit"`
+	Data       []ProductResponse `json:"data"`
+	Total      int64             `json:"total"`
+	Page       int               `json:"page"`
+	Limit      int               `json:"limit"`
+	TotalPages int               `json:"total_pages"`
 }
 
 // Réponse pour un produit avec ses images

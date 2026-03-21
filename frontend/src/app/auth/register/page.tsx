@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCreateTenant } from '@/lib/hooks/use-api';
 import { Loader2 } from 'lucide-react';
 
@@ -35,7 +36,6 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -46,8 +46,8 @@ export default function RegisterPage() {
       setError('');
       await createTenantMutation.mutateAsync(data);
       router.push('/auth/login?message=Registration successful. Please log in.');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Registration failed'));
     }
   };
 
@@ -135,7 +135,7 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <Label htmlFor="plan">Plan</Label>
-              <Select onValueChange={(value) => setValue('plan', value as any)}>
+              <Select onValueChange={(value) => setValue('plan', value as RegisterForm['plan'])}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a plan" />
                 </SelectTrigger>

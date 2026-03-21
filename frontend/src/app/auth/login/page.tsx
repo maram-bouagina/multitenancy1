@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { apiClient } from '@/lib/api/client';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { Loader2 } from 'lucide-react';
 
 const loginSchema = z.object({
@@ -43,8 +44,8 @@ export default function LoginPage() {
       const response = await apiClient.login(data);
       login(response);
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Login failed'));
     } finally {
       setIsLoading(false);
     }
@@ -105,7 +106,7 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href="/auth/register" className="font-medium text-blue-600 hover:text-blue-500">
                 Sign up
               </Link>

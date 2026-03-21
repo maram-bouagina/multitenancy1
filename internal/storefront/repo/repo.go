@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -157,11 +159,17 @@ func (r *StorefrontRepo) GetCollectionProducts(
 	}
 
 	base := db.Table("products p").
-		Joins("JOIN collection_products cp ON cp.product_id = p.id").
-		Where(
-			"cp.collection_id = ? AND p.store_id = ? AND p.status = 'published' AND p.visibility = 'public' AND p.deleted_at IS NULL",
-			col.ID, storeID,
-		)
+		Where("p.store_id = ? AND p.status = 'published' AND p.visibility = 'public' AND p.deleted_at IS NULL", storeID)
+
+	if col.Type == prodModels.CollectionManual {
+		base = base.Joins("JOIN collection_products cp ON cp.product_id = p.id").Where("cp.collection_id = ?", col.ID)
+	} else if col.Rule != nil && *col.Rule != "" {
+		filteredBase, err := applyStorefrontCollectionRule(base, *col.Rule)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		base = filteredBase
+	}
 
 	var total int64
 	base.Count(&total)
@@ -175,6 +183,46 @@ func (r *StorefrontRepo) GetCollectionProducts(
 		Find(&products).Error
 
 	return &col, products, total, err
+}
+
+func applyStorefrontCollectionRule(query *gorm.DB, rule string) (*gorm.DB, error) {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return query, nil
+	}
+
+	re := regexp.MustCompile(`^(price|stock|status|visibility|brand)\s*(>=|<=|>|<|=)\s*(.+)$`)
+	matches := re.FindStringSubmatch(rule)
+	if len(matches) != 4 {
+		return nil, fmt.Errorf("invalid collection rule format")
+	}
+
+	field := matches[1]
+	operator := matches[2]
+	rawValue := strings.TrimSpace(matches[3])
+	column := "p." + field
+
+	switch field {
+	case "price":
+		value, err := strconv.ParseFloat(rawValue, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid price rule value")
+		}
+		return query.Where(column+" "+operator+" ?", value), nil
+	case "stock":
+		value, err := strconv.Atoi(rawValue)
+		if err != nil {
+			return nil, fmt.Errorf("invalid stock rule value")
+		}
+		return query.Where(column+" "+operator+" ?", value), nil
+	case "status", "visibility", "brand":
+		if operator != "=" {
+			return nil, fmt.Errorf("operator %s not supported for %s", operator, field)
+		}
+		return query.Where(column+" = ?", rawValue), nil
+	default:
+		return nil, fmt.Errorf("unsupported collection rule field")
+	}
 }
 
 // ── Products ─────────────────────────────────────────────────────────────────

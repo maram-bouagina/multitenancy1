@@ -16,6 +16,7 @@ import {
   CreateTagRequest,
   CreateCategoryRequest,
   CreateCollectionRequest,
+  CollectionWithProductsResponse,
   PaginatedResponse,
   ProductFilters
 } from '@/lib/types';
@@ -24,6 +25,16 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 class ApiClient {
   private client: AxiosInstance;
+
+  private cleanPayload<T extends object>(data: T): Partial<T> {
+    const cleanedEntries = Object.entries(data as Record<string, unknown>).filter(([, value]) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value === 'number' && Number.isNaN(value)) return false;
+      if (typeof value === 'string' && value.trim() === '') return false;
+      return true;
+    });
+    return Object.fromEntries(cleanedEntries) as Partial<T>;
+  }
 
   constructor() {
     this.client = axios.create({
@@ -125,7 +136,8 @@ class ApiClient {
 
   // Product endpoints
   async createProduct(storeId: string, data: CreateProductRequest): Promise<Product> {
-    const response = await this.client.post<Product>(`/api/stores/${storeId}/products`, data);
+    const payload = this.cleanPayload(data);
+    const response = await this.client.post<Product>(`/api/stores/${storeId}/products`, payload);
     return response.data;
   }
 
@@ -151,7 +163,8 @@ class ApiClient {
   }
 
   async updateProduct(storeId: string, productId: string, data: Partial<CreateProductRequest>): Promise<Product> {
-    const response = await this.client.put<Product>(`/api/stores/${storeId}/products/${productId}`, data);
+    const payload = this.cleanPayload(data as Record<string, unknown>);
+    const response = await this.client.put<Product>(`/api/stores/${storeId}/products/${productId}`, payload);
     return response.data;
   }
 
@@ -161,7 +174,7 @@ class ApiClient {
 
   // Category endpoints
   async createCategory(storeId: string, data: CreateCategoryRequest): Promise<Category> {
-    const response = await this.client.post<Category>(`/api/stores/${storeId}/categories`, data);
+    const response = await this.client.post<Category>(`/api/stores/${storeId}/categories`, this.cleanPayload(data));
     return response.data;
   }
 
@@ -176,7 +189,7 @@ class ApiClient {
   }
 
   async updateCategory(storeId: string, categoryId: string, data: Partial<CreateCategoryRequest>): Promise<Category> {
-    const response = await this.client.put<Category>(`/api/stores/${storeId}/categories/${categoryId}`, data);
+    const response = await this.client.put<Category>(`/api/stores/${storeId}/categories/${categoryId}`, this.cleanPayload(data));
     return response.data;
   }
 
@@ -186,7 +199,7 @@ class ApiClient {
 
   // Collection endpoints
   async createCollection(storeId: string, data: CreateCollectionRequest): Promise<Collection> {
-    const response = await this.client.post<Collection>(`/api/stores/${storeId}/collections`, data);
+    const response = await this.client.post<Collection>(`/api/stores/${storeId}/collections`, this.cleanPayload(data));
     return response.data;
   }
 
@@ -201,7 +214,7 @@ class ApiClient {
   }
 
   async updateCollection(storeId: string, collectionId: string, data: Partial<CreateCollectionRequest>): Promise<Collection> {
-    const response = await this.client.put<Collection>(`/api/stores/${storeId}/collections/${collectionId}`, data);
+    const response = await this.client.put<Collection>(`/api/stores/${storeId}/collections/${collectionId}`, this.cleanPayload(data));
     return response.data;
   }
 
@@ -209,9 +222,24 @@ class ApiClient {
     await this.client.delete(`/api/stores/${storeId}/collections/${collectionId}`);
   }
 
+  async getCollectionProducts(storeId: string, collectionId: string, page = 1, limit = 100): Promise<CollectionWithProductsResponse> {
+    const response = await this.client.get<CollectionWithProductsResponse>(`/api/stores/${storeId}/collections/${collectionId}/products`, {
+      params: { page, limit },
+    });
+    return response.data;
+  }
+
+  async addProductToCollection(storeId: string, collectionId: string, productId: string): Promise<void> {
+    await this.client.post(`/api/stores/${storeId}/collections/${collectionId}/products/${productId}`);
+  }
+
+  async removeProductFromCollection(storeId: string, collectionId: string, productId: string): Promise<void> {
+    await this.client.delete(`/api/stores/${storeId}/collections/${collectionId}/products/${productId}`);
+  }
+
   // Tag endpoints
   async createTag(storeId: string, data: CreateTagRequest): Promise<Tag> {
-    const response = await this.client.post<Tag>(`/api/stores/${storeId}/tags`, data);
+    const response = await this.client.post<Tag>(`/api/stores/${storeId}/tags`, this.cleanPayload(data));
     return response.data;
   }
 
@@ -226,12 +254,18 @@ class ApiClient {
   }
 
   async updateTag(storeId: string, tagId: string, data: Partial<CreateTagRequest>): Promise<Tag> {
-    const response = await this.client.put<Tag>(`/api/stores/${storeId}/tags/${tagId}`, data);
+    const response = await this.client.put<Tag>(`/api/stores/${storeId}/tags/${tagId}`, this.cleanPayload(data));
     return response.data;
   }
 
   async deleteTag(storeId: string, tagId: string): Promise<void> {
     await this.client.delete(`/api/stores/${storeId}/tags/${tagId}`);
+  }
+
+  async assignTagsToProduct(storeId: string, productId: string, tagIds: string[]): Promise<void> {
+    await this.client.post(`/api/stores/${storeId}/products/${productId}/tags`, {
+      tag_ids: tagIds,
+    });
   }
 
   // Product Image endpoints

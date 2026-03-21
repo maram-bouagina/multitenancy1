@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -13,7 +14,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
 import {
   Menu,
   Store,
@@ -26,7 +26,6 @@ import {
   BarChart3,
   ChevronDown,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
@@ -44,25 +43,12 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { user, currentStore, stores, logout, setCurrentStore, isAuthenticated, isLoading } = useAuth();
+interface NavItemsProps {
+  pathname: string | null;
+}
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/auth/login');
-    } else if (!isLoading && isAuthenticated && !currentStore) {
-      router.push('/dashboard/stores');
-    }
-  }, [isAuthenticated, isLoading, currentStore, router]);
-
-  const handleLogout = () => {
-    logout();
-    router.push('/auth/login');
-  };
-
-  const NavItems = () => (
+function NavItems({ pathname }: NavItemsProps) {
+  return (
     <>
       {navigation.map((item) => {
         const isActive = pathname === item.href;
@@ -84,6 +70,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       })}
     </>
   );
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, currentStore, stores, logout, setCurrentStore, isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/auth/login');
+    } else if (!isLoading && isAuthenticated && !currentStore) {
+      router.push('/dashboard/stores');
+    }
+  }, [isAuthenticated, isLoading, currentStore, router]);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/auth/login');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -104,7 +109,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <h2 className="text-lg font-semibold">Dashboard</h2>
             </div>
             <nav className="flex-1 space-y-1 p-4">
-              <NavItems />
+              <NavItems pathname={pathname} />
             </nav>
           </div>
         </SheetContent>
@@ -118,7 +123,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           <div className="mt-8 flex-grow flex flex-col">
             <nav className="flex-1 px-2 space-y-1">
-              <NavItems />
+              <NavItems pathname={pathname} />
             </nav>
           </div>
         </div>
@@ -185,7 +190,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none">User</p>
                       <p className="text-xs leading-none text-muted-foreground">
-                        user@example.com
+                        {user?.email || 'user@example.com'}
                       </p>
                     </div>
                   </DropdownMenuLabel>

@@ -76,6 +76,9 @@ export interface Product {
   published_at?: string;
   created_at: string;
   updated_at: string;
+  category?: Category;
+  collections?: Collection[];
+  tags?: Tag[];
 }
 
 export interface Category {
@@ -88,6 +91,7 @@ export interface Category {
   parent_id?: string;
   created_at: string;
   updated_at: string;
+  children?: Category[];
 }
 
 export interface Collection {
@@ -99,6 +103,14 @@ export interface Collection {
   rule?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CollectionWithProductsResponse extends Collection {
+  products: Product[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
 }
 
 export interface CollectionRule {
@@ -266,4 +278,6 @@ export interface ProductFilters extends PaginationParams {
   visibility?: string;
   min_price?: number;
   max_price?: number;
+  in_stock?: boolean;
+  sort_by?: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
 }

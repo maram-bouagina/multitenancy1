@@ -16,6 +16,8 @@ type ProductRepository interface {
 	Create(db *gorm.DB, product *models.Product) error
 	FindByID(db *gorm.DB, id, storeID uuid.UUID) (*models.Product, error)
 	FindAll(db *gorm.DB, storeID uuid.UUID, filter dto.ProductFilter) ([]models.Product, error)
+	CountAll(db *gorm.DB, storeID uuid.UUID, filter dto.ProductFilter) (int64, error)
+	FindAllForExport(db *gorm.DB, storeID uuid.UUID) ([]models.Product, error)
 	Update(db *gorm.DB, product *models.Product) error
 	Delete(db *gorm.DB, id, storeID uuid.UUID) error
 	SlugExists(db *gorm.DB, slug string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error)
@@ -41,7 +43,10 @@ func (r *productRepository) Create(db *gorm.DB, product *models.Product) error {
 // Cherche un produit par son ID et storeID
 func (r *productRepository) FindByID(db *gorm.DB, id, storeID uuid.UUID) (*models.Product, error) {
 	var product models.Product
-	err := db.Where("id = ? AND store_id = ? AND deleted_at IS NULL", id, storeID).
+	err := db.Preload("Category").
+		Preload("Collections").
+		Preload("Tags", "deleted_at IS NULL").
+		Where("id = ? AND store_id = ? AND deleted_at IS NULL", id, storeID).
 		First(&product).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -54,17 +59,33 @@ func (r *productRepository) FindAll(db *gorm.DB, storeID uuid.UUID, filter dto.P
 	var products []models.Product
 	query := db.Where("store_id = ? AND deleted_at IS NULL", storeID)
 
-	if filter.Status != nil {
-		query = query.Where("status = ?", *filter.Status)
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
 	}
-	if filter.Visibility != nil {
-		query = query.Where("visibility = ?", *filter.Visibility)
+	if filter.Visibility != "" {
+		query = query.Where("visibility = ?", filter.Visibility)
 	}
-	if filter.Brand != nil {
-		query = query.Where("brand = ?", *filter.Brand)
+	if filter.Brand != "" {
+		query = query.Where("brand = ?", filter.Brand)
 	}
-	if filter.Search != nil && *filter.Search != "" {
-		query = query.Where("title ILIKE ?", "%"+strings.TrimSpace(*filter.Search)+"%")
+	if filter.Search != "" {
+		query = query.Where("title ILIKE ?", "%"+strings.TrimSpace(filter.Search)+"%")
+	}
+	if filter.CategoryID != "" {
+		query = query.Where("category_id = ?", filter.CategoryID)
+	}
+	if filter.PriceMin != nil {
+		query = query.Where("price >= ?", *filter.PriceMin)
+	}
+	if filter.PriceMax != nil {
+		query = query.Where("price <= ?", *filter.PriceMax)
+	}
+	if filter.InStock != nil {
+		if *filter.InStock {
+			query = query.Where("stock > 0")
+		} else {
+			query = query.Where("stock <= 0")
+		}
 	}
 
 	if filter.Page < 1 {
@@ -74,11 +95,68 @@ func (r *productRepository) FindAll(db *gorm.DB, storeID uuid.UUID, filter dto.P
 		filter.Limit = 20
 	}
 
-	err := query.Order("created_at DESC").
+	orderBy := "created_at DESC"
+	switch filter.SortBy {
+	case "price_asc":
+		orderBy = "price ASC"
+	case "price_desc":
+		orderBy = "price DESC"
+	case "oldest":
+		orderBy = "created_at ASC"
+	}
+
+	err := query.Order(orderBy).
 		Limit(filter.Limit).
 		Offset((filter.Page - 1) * filter.Limit).
 		Find(&products).Error
 
+	return products, err
+}
+
+// CountAll retourne le nombre total de produits correspondant aux filtres
+func (r *productRepository) CountAll(db *gorm.DB, storeID uuid.UUID, filter dto.ProductFilter) (int64, error) {
+	var total int64
+	query := db.Model(&models.Product{}).Where("store_id = ? AND deleted_at IS NULL", storeID)
+
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.Visibility != "" {
+		query = query.Where("visibility = ?", filter.Visibility)
+	}
+	if filter.Brand != "" {
+		query = query.Where("brand = ?", filter.Brand)
+	}
+	if filter.Search != "" {
+		query = query.Where("title ILIKE ?", "%"+strings.TrimSpace(filter.Search)+"%")
+	}
+	if filter.CategoryID != "" {
+		query = query.Where("category_id = ?", filter.CategoryID)
+	}
+	if filter.PriceMin != nil {
+		query = query.Where("price >= ?", *filter.PriceMin)
+	}
+	if filter.PriceMax != nil {
+		query = query.Where("price <= ?", *filter.PriceMax)
+	}
+	if filter.InStock != nil {
+		if *filter.InStock {
+			query = query.Where("stock > 0")
+		} else {
+			query = query.Where("stock <= 0")
+		}
+	}
+
+	err := query.Count(&total).Error
+	return total, err
+}
+
+// FindAllForExport retourne tous les produits sans pagination (pour export CSV/Excel)
+func (r *productRepository) FindAllForExport(db *gorm.DB, storeID uuid.UUID) ([]models.Product, error) {
+	var products []models.Product
+	err := db.Where("store_id = ? AND deleted_at IS NULL", storeID).
+		Order("created_at DESC").
+		Find(&products).Error
 	return products, err
 }
 

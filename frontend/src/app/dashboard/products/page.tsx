@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import {
   useReactTable,
   getCoreRowModel,
-  getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
+  RowSelectionState,
   ColumnDef,
   flexRender,
 } from '@tanstack/react-table';
@@ -29,27 +29,239 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useProducts, useDeleteProduct } from '@/lib/hooks/use-api';
+import { useProducts, useDeleteProduct, useUpdateProduct } from '@/lib/hooks/use-api';
 import { Product } from '@/lib/types';
-import { Plus, MoreHorizontal, Search, Edit, Trash2, Eye } from 'lucide-react';
+import { Plus, MoreHorizontal, Search, Edit, Trash2, Eye, Download, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/lib/hooks/use-auth';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function ProductsPage() {
   const { currentStore, isAuthenticated } = useAuth();
   const activeStoreId = currentStore?.id || '';
   const [globalFilter, setGlobalFilter] = useState('');
-  const { data: productsResponse, isLoading } = useProducts(activeStoreId);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState('');
+  const [minPriceFilter, setMinPriceFilter] = useState('');
+  const [maxPriceFilter, setMaxPriceFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'price_asc' | 'price_desc'>('newest');
+  const [appliedFilters, setAppliedFilters] = useState<{
+    search?: string;
+    status?: string;
+    visibility?: string;
+    min_price?: number;
+    max_price?: number;
+    sort_by: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
+  }>({ sort_by: 'newest' });
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [filterMessage, setFilterMessage] = useState('');
+  const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const productFilters = useMemo(() => appliedFilters, [appliedFilters]);
+
+  const { data: productsResponse, isLoading, refetch } = useProducts(activeStoreId, productFilters);
   const deleteProductMutation = useDeleteProduct();
+  const updateProductMutation = useUpdateProduct();
 
   const products = productsResponse?.data || [];
 
+  const handleExport = async (format: 'csv' | 'xlsx') => {
+    if (!activeStoreId) return;
+    setIsExporting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = `${API_BASE_URL}/api/stores/${activeStoreId}/products/export?format=${format}`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Export failed');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `products.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export products');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeStoreId) return;
+
+    setIsImporting(true);
+    setImportMessage('');
+    setImportErrors([]);
+    setImportWarnings([]);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/api/stores/${activeStoreId}/products/import`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody?.error || 'Import failed');
+      }
+
+      const result = await response.json();
+      const errors = Array.isArray(result.errors) ? result.errors : [];
+      const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+      const warningCount = Array.isArray(result.warnings) ? result.warnings.length : 0;
+      setImportMessage(
+        `Imported: ${result.imported}, Updated: ${result.updated}, Skipped: ${result.skipped}${warningCount > 0 ? `, Warnings: ${warningCount}` : ''}${errors.length > 0 ? `, Errors: ${errors.length}` : ''}`
+      );
+      setImportErrors(errors);
+      setImportWarnings(warnings);
+      
+      refetch();
+    } catch (error) {
+      console.error('Import error:', error);
+      setImportMessage(error instanceof Error ? error.message : 'Import failed. Please check the file format.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!activeStoreId) return;
+    const selectedProducts = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+    if (selectedProducts.length === 0) return;
+    if (!confirm(`Delete ${selectedProducts.length} selected product(s)?`)) return;
+
+    try {
+      await Promise.all(
+        selectedProducts.map((product) =>
+          deleteProductMutation.mutateAsync({ storeId: activeStoreId, productId: product.id })
+        )
+      );
+      table.resetRowSelection();
+    } catch (error) {
+      console.error('Failed to delete selected products:', error);
+    }
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (!activeStoreId || !bulkStatus) return;
+    const selectedProducts = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+    if (selectedProducts.length === 0) return;
+    if (!confirm(`Set status to '${bulkStatus}' for ${selectedProducts.length} selected product(s)?`)) return;
+
+    try {
+      await Promise.all(
+        selectedProducts.map((product) =>
+          updateProductMutation.mutateAsync({
+            storeId: activeStoreId,
+            productId: product.id,
+            data: { status: bulkStatus as 'draft' | 'published' | 'archived' },
+          })
+        )
+      );
+      table.resetRowSelection();
+      setBulkStatus('');
+      refetch();
+    } catch (error) {
+      console.error('Failed to update selected products:', error);
+      alert('Some products could not be updated.');
+    }
+  };
+
+  const applyFilters = () => {
+    const parsedMin = minPriceFilter.trim() === '' ? undefined : Number(minPriceFilter);
+    const parsedMax = maxPriceFilter.trim() === '' ? undefined : Number(maxPriceFilter);
+
+    if (parsedMin !== undefined && (!Number.isFinite(parsedMin) || parsedMin < 0)) {
+      setFilterMessage('Min price must be a valid positive number.');
+      return;
+    }
+    if (parsedMax !== undefined && (!Number.isFinite(parsedMax) || parsedMax < 0)) {
+      setFilterMessage('Max price must be a valid positive number.');
+      return;
+    }
+
+    let minVal = parsedMin;
+    let maxVal = parsedMax;
+    if (minVal !== undefined && maxVal !== undefined && minVal > maxVal) {
+      [minVal, maxVal] = [maxVal, minVal];
+      setMinPriceFilter(String(minVal));
+      setMaxPriceFilter(String(maxVal));
+    }
+
+    setFilterMessage('');
+    startTransition(() => {
+      setAppliedFilters({
+        search: globalFilter.trim() || undefined,
+        status: statusFilter || undefined,
+        visibility: visibilityFilter || undefined,
+        min_price: minVal,
+        max_price: maxVal,
+        sort_by: sortBy,
+      });
+    });
+  };
+
+  const resetFilters = () => {
+    setGlobalFilter('');
+    setStatusFilter('');
+    setVisibilityFilter('');
+    setMinPriceFilter('');
+    setMaxPriceFilter('');
+    setSortBy('newest');
+    setFilterMessage('');
+    setAppliedFilters({ sort_by: 'newest' });
+  };
+
   const columns: ColumnDef<Product>[] = [
     {
-      accessorKey: 'name',
+      id: 'select',
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllPageRowsSelected()}
+          onChange={(event) => table.toggleAllPageRowsSelected(!!event.target.checked)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={(event) => row.toggleSelected(!!event.target.checked)}
+          aria-label="Select row"
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    },
+    {
+      accessorKey: 'title',
       header: 'Name',
       cell: ({ row }) => (
-        <div className="font-medium">{row.getValue('name')}</div>
+        <div className="font-medium">{row.getValue('title')}</div>
       ),
     },
     {
@@ -99,9 +311,15 @@ export default function ProductsPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
-                <Link href={`/dashboard/products/${product.id}`}>
+                <Link href={`/dashboard/products/${product.id}/details`}>
                   <Eye className="mr-2 h-4 w-4" />
-                  View / Edit
+                  View Details
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/dashboard/products/${product.id}`}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -121,15 +339,14 @@ export default function ProductsPage() {
   const table = useReactTable({
     data: products,
     columns,
+    enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    globalFilterFn: 'includesString',
     state: {
-      globalFilter,
+      rowSelection,
     },
-    onGlobalFilterChange: setGlobalFilter,
+    onRowSelectionChange: setRowSelection,
   });
 
   const handleDelete = async (productId: string) => {
@@ -157,19 +374,119 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,.xlsx"
+        onChange={handleFileSelected}
+        className="hidden"
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Products</h1>
           <p className="text-gray-600">Manage your product catalog</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/products/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Export Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={isExporting}>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport('csv')}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('xlsx')}>
+                Export as Excel
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Import Button */}
+          <Button 
+            variant="outline" 
+            onClick={handleImportClick} 
+            disabled={isImporting}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Import
+          </Button>
+
+          {/* Add Product Button */}
+          <Button asChild>
+            <Link href="/dashboard/products/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      {/* Import Message */}
+      {importMessage && (
+        <div className="rounded-md bg-green-50 p-4 text-sm text-green-800">
+          {importMessage}
+          <button
+            className="ml-2 font-semibold underline"
+            onClick={() => {
+              setImportMessage('');
+              setImportErrors([]);
+              setImportWarnings([]);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {(importErrors.length > 0 || importWarnings.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Import Details</CardTitle>
+            <CardDescription>Review skipped rows and unresolved values.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {importErrors.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-red-700">Errors</p>
+                <ul className="list-disc pl-5 text-sm text-red-700">
+                  {importErrors.slice(0, 10).map((item, idx) => (
+                    <li key={`err-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {importWarnings.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-amber-700">Warnings</p>
+                <ul className="list-disc pl-5 text-sm text-amber-700">
+                  {importWarnings.slice(0, 10).map((item, idx) => (
+                    <li key={`warn-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {filterMessage && (
+        <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+          {filterMessage}
+          <button
+            className="ml-2 font-semibold underline"
+            onClick={() => setFilterMessage('')}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -222,16 +539,102 @@ export default function ProductsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Search */}
-          <div className="flex items-center py-4">
-            <div className="relative max-w-sm">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
+          {/* Search & Filters */}
+          <div className="space-y-3 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
+                <Input
+                  placeholder="Search title, brand, sku..."
+                  value={globalFilter ?? ''}
+                  onChange={(event) => setGlobalFilter(event.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              >
+                <option value="">All status</option>
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+              </select>
+              <select
+                value={visibilityFilter}
+                onChange={(e) => setVisibilityFilter(e.target.value)}
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              >
+                <option value="">All visibility</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
               <Input
-                placeholder="Search products..."
-                value={globalFilter ?? ''}
-                onChange={(event) => setGlobalFilter(event.target.value)}
-                className="pl-8"
+                type="number"
+                placeholder="Min price"
+                value={minPriceFilter}
+                onChange={(e) => setMinPriceFilter(e.target.value)}
+                className="w-32"
               />
+              <Input
+                type="number"
+                placeholder="Max price"
+                value={maxPriceFilter}
+                onChange={(e) => setMaxPriceFilter(e.target.value)}
+                className="w-32"
+              />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'price_asc' | 'price_desc')}
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="price_asc">Price ↑</option>
+                <option value="price_desc">Price ↓</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={applyFilters} disabled={isPending || isLoading}>
+                  {isPending || isLoading ? 'Applying...' : 'Apply Filters'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={resetFilters}>
+                  Reset
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkStatus}
+                  onChange={(e) => setBulkStatus(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  <option value="">Bulk status...</option>
+                  <option value="draft">Set Draft</option>
+                  <option value="published">Set Published</option>
+                  <option value="archived">Set Archived</option>
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!bulkStatus || table.getFilteredSelectedRowModel().rows.length === 0 || updateProductMutation.isPending}
+                  onClick={handleBulkStatusUpdate}
+                >
+                  Apply to Selected
+                </Button>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={table.getFilteredSelectedRowModel().rows.length === 0 || deleteProductMutation.isPending}
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Selected
+              </Button>
             </div>
           </div>
 

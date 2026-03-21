@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -10,8 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { useCreateProduct, useCategories } from '@/lib/hooks/use-api';
+import { useAssignProductTags, useCategories, useCreateProduct, useTags } from '@/lib/hooks/use-api';
 
 const productSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -34,14 +36,26 @@ const productSchema = z.object({
 
 type ProductForm = z.infer<typeof productSchema>;
 
+function optionalString(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function optionalNumber(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 export default function NewProductPage() {
   const router = useRouter();
   const { currentStore } = useAuth();
   const storeId = currentStore?.id || '';
   const [error, setError] = useState<string>('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
   const createProductMutation = useCreateProduct();
+  const assignTagsMutation = useAssignProductTags();
   const { data: categories } = useCategories(storeId);
+  const { data: tags } = useTags(storeId);
 
   const { register, handleSubmit, formState: { errors } } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -62,11 +76,37 @@ export default function NewProductPage() {
 
     try {
       setError('');
-      await createProductMutation.mutateAsync({ storeId, data });
+      const payload = {
+        ...data,
+        slug: optionalString(data.slug),
+        description: optionalString(data.description),
+        sku: optionalString(data.sku),
+        dimensions: optionalString(data.dimensions),
+        brand: optionalString(data.brand),
+        tax_class: optionalString(data.tax_class),
+        category_id: optionalString(data.category_id),
+        sale_price: optionalNumber(data.sale_price),
+        weight: optionalNumber(data.weight),
+      };
+
+      const product = await createProductMutation.mutateAsync({ storeId, data: payload });
+
+      if (selectedTagIds.length > 0) {
+        await assignTagsMutation.mutateAsync({ storeId, productId: product.id, tagIds: selectedTagIds });
+      }
+
       router.push('/dashboard/products');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create product');
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, 'Failed to create product'));
     }
+  };
+
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds((current) => (
+      current.includes(tagId)
+        ? current.filter((id) => id !== tagId)
+        : [...current, tagId]
+    ));
   };
 
 
@@ -198,9 +238,42 @@ export default function NewProductPage() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={createProductMutation.isPending}>
-              Create Product
-            </Button>
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Tags</h2>
+                <p className="text-sm text-gray-600">Assign tags while creating the product.</p>
+              </div>
+              {!tags || tags.length === 0 ? (
+                <p className="text-sm text-gray-500">Create tags first if you want to assign them now.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {tags.map((tag) => {
+                    const checked = selectedTagIds.includes(tag.id);
+
+                    return (
+                      <label key={tag.id} className="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTag(tag.id)}
+                          className="h-4 w-4"
+                        />
+                        <span>{tag.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="w-full" asChild>
+                <Link href="/dashboard/products">Cancel</Link>
+              </Button>
+              <Button type="submit" className="w-full" disabled={createProductMutation.isPending || assignTagsMutation.isPending}>
+                Create Product
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
